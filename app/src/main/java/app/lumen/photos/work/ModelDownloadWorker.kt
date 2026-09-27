@@ -17,7 +17,7 @@ class ModelDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
         val model = ModelCatalog.byId(inputData.getString(KEY_MODEL)) ?: return Result.failure()
         val cancel = WorkManager.getInstance(applicationContext).createCancelPendingIntent(id)
         val title = "Lade ${model.name}"
-        setForeground(Notifications.progress(applicationContext, Notifications.ID_DOWNLOAD, title, "Verbinde …", 0, 0, cancel, dataSync = true))
+        safeForeground(Notifications.progress(applicationContext, Notifications.ID_DOWNLOAD, title, "Verbinde …", 0, 0, cancel, dataSync = true))
         var lastUi = 0L
         return try {
             c.models.download(model) { done, total ->
@@ -26,7 +26,7 @@ class ModelDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
                     lastUi = now
                     setProgress(workDataOf(KEY_DONE to done, KEY_TOTAL to total))
                     val permille = (done * 1000 / total.coerceAtLeast(1)).toInt()
-                    setForeground(
+                    safeForeground(
                         Notifications.progress(
                             applicationContext, Notifications.ID_DOWNLOAD, title,
                             "${Formatter.formatShortFileSize(applicationContext, done)} von ${Formatter.formatShortFileSize(applicationContext, total)}",

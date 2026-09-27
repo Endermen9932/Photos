@@ -88,3 +88,11 @@ object Notifications {
         )
     }
 }
+
+/**
+ * Promotes the worker to a foreground service when allowed. Android refuses this for jobs that
+ * start while the app is in the background – the work then simply continues without it.
+ */
+suspend fun androidx.work.CoroutineWorker.safeForeground(info: ForegroundInfo) {
+    runCatching { setForeground(info) }
+}

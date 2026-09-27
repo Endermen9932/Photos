@@ -32,7 +32,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val items = job.ids.mapNotNull { byId[it] }
         val cancel = WorkManager.getInstance(applicationContext).createCancelPendingIntent(id)
         val title = "Speicher wird optimiert"
-        setForeground(Notifications.progress(applicationContext, Notifications.ID_OPTIMIZE, title, "Starte …", 0, items.size, cancel))
+        safeForeground(Notifications.progress(applicationContext, Notifications.ID_OPTIMIZE, title, "Starte …", 0, items.size, cancel))
 
         var done = 0
         var saved = 0L
@@ -54,7 +54,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 setProgress(
                     workDataOf(KEY_DONE to done, KEY_TOTAL to items.size, KEY_SAVED to saved, KEY_FAILED to failed, KEY_SKIPPED to skipped)
                 )
-                setForeground(
+                safeForeground(
                     Notifications.progress(
                         applicationContext, Notifications.ID_OPTIMIZE, title,
                         "$done von ${items.size} · ${Formatter.formatShortFileSize(applicationContext, saved)} gespart",

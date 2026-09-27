@@ -56,7 +56,7 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         val items = c.media.media.value.filter { settings.includeVideos || it.isImage }
         val cancel = WorkManager.getInstance(applicationContext).createCancelPendingIntent(id)
         val title = "Backup läuft"
-        setForeground(Notifications.progress(applicationContext, Notifications.ID_BACKUP, title, "Vergleiche Dateien …", 0, items.size, cancel, dataSync = true))
+        safeForeground(Notifications.progress(applicationContext, Notifications.ID_BACKUP, title, "Vergleiche Dateien …", 0, items.size, cancel, dataSync = true))
 
         fun listing(d: DocumentFile) = HashMap(d.listFiles().associateBy { it.name ?: "" })
         val dirs = HashMap<String, Dir>()
@@ -96,7 +96,7 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             if (now - lastUi > 700 || done == items.size) {
                 lastUi = now
                 setProgress(workDataOf(KEY_DONE to done, KEY_TOTAL to items.size, KEY_COPIED to copied, KEY_BYTES to bytes, KEY_MODE to MODE_BACKUP))
-                setForeground(
+                safeForeground(
                     Notifications.progress(
                         applicationContext, Notifications.ID_BACKUP, title,
                         "$done von ${items.size} · $copied neu (${Formatter.formatShortFileSize(applicationContext, bytes)})",
@@ -128,7 +128,7 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
         val cancel = WorkManager.getInstance(applicationContext).createCancelPendingIntent(id)
         val title = "Wiederherstellung läuft"
-        setForeground(Notifications.progress(applicationContext, Notifications.ID_BACKUP, title, "Durchsuche Backup …", 0, 0, cancel, dataSync = true))
+        safeForeground(Notifications.progress(applicationContext, Notifications.ID_BACKUP, title, "Durchsuche Backup …", 0, 0, cancel, dataSync = true))
 
         val files = ArrayList<Pair<String, DocumentFile>>()
         fun walk(dir: DocumentFile, path: String) {
@@ -182,7 +182,7 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             if (now - lastUi > 700 || done == missing.size) {
                 lastUi = now
                 setProgress(workDataOf(KEY_DONE to done, KEY_TOTAL to missing.size, KEY_COPIED to restored, KEY_MODE to MODE_RESTORE))
-                setForeground(
+                safeForeground(
                     Notifications.progress(applicationContext, Notifications.ID_BACKUP, title, "$done von ${missing.size}", done, missing.size, cancel, dataSync = true)
                 )
             }

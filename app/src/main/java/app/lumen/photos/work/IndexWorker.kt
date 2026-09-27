@@ -50,7 +50,7 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         val engine = c.ai.engine(model)
         val cancel = WorkManager.getInstance(applicationContext).createCancelPendingIntent(id)
         val title = "KI-Indexierung · ${model.tier}"
-        setForeground(Notifications.progress(applicationContext, Notifications.ID_INDEX, title, "Wird vorbereitet …", 0, todo.size, cancel))
+        safeForeground(Notifications.progress(applicationContext, Notifications.ID_INDEX, title, "Wird vorbereitet …", 0, todo.size, cancel))
 
         val thumbSize = (model.imageSize * 1.5f).toInt().coerceAtLeast(320)
         val batch = ArrayList<EmbeddingEntity>(32)
@@ -87,7 +87,7 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
                         workDataOf(KEY_DONE to done, KEY_TOTAL to todo.size, KEY_MS to ms, KEY_MODEL to model.id)
                     )
                     val remaining = (todo.size - done).toLong() * ms / 1000
-                    setForeground(
+                    safeForeground(
                         Notifications.progress(
                             applicationContext, Notifications.ID_INDEX, title,
                             "$done von ${todo.size} · noch ca. ${formatDuration(remaining)}",
