@@ -4,6 +4,13 @@ import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -69,17 +76,38 @@ class Navigator(private val controller: NavHostController) {
 
 val LocalNavigator = staticCompositionLocalOf<Navigator> { error("No navigator") }
 
+// Material 3 "shared axis X" transitions with emphasized easing. They are also driven by the
+// predictive back gesture, so the previous screen follows the finger and settles smoothly.
+private val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+private val EmphasizedAccelerate = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
+private const val ENTER_MS = 500
+private const val EXIT_MS = 350
+
 private val slideIn: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-    slideInHorizontally(tween(380)) { it / 4 } + fadeIn(tween(300))
+    slideInHorizontally(tween(ENTER_MS, easing = EmphasizedDecelerate)) { (it * 0.3f).toInt() } +
+        fadeIn(tween(ENTER_MS / 2, delayMillis = 60, easing = LinearEasing))
 }
 private val slideOut: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-    slideOutHorizontally(tween(380)) { -it / 6 } + fadeOut(tween(250))
+    slideOutHorizontally(tween(ENTER_MS, easing = EmphasizedDecelerate)) { -(it * 0.1f).toInt() } +
+        fadeOut(tween(EXIT_MS / 2, easing = LinearEasing)) +
+        scaleOut(tween(ENTER_MS, easing = EmphasizedDecelerate), targetScale = 0.96f)
 }
 private val popIn: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-    slideInHorizontally(tween(380)) { -it / 6 } + fadeIn(tween(300))
+    slideInHorizontally(tween(ENTER_MS, easing = EmphasizedDecelerate)) { -(it * 0.1f).toInt() } +
+        fadeIn(tween(ENTER_MS / 2, delayMillis = 50, easing = LinearEasing)) +
+        scaleIn(tween(ENTER_MS, easing = EmphasizedDecelerate), initialScale = 0.96f)
 }
 private val popOut: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-    slideOutHorizontally(tween(380)) { it / 4 } + fadeOut(tween(250))
+    slideOutHorizontally(tween(EXIT_MS, easing = EmphasizedAccelerate)) { (it * 0.3f).toInt() } +
+        fadeOut(tween(EXIT_MS, easing = EmphasizedAccelerate))
+}
+
+/** Opaque page with the right content colour, so text is readable and pages never bleed through. */
+@Composable
+private fun Page(content: @Composable () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground, modifier = Modifier.fillMaxSize()) {
+        content()
+    }
 }
 
 @Composable
@@ -98,13 +126,17 @@ fun LumenNavHost(startOnboarding: Boolean, onNavigatorReady: (Navigator) -> Unit
                 popExitTransition = popOut,
             ) {
                 composable<OnboardingRoute> {
-                    CompositionLocalProvider(LocalNavAnimatedScope provides this) { OnboardingScreen() }
+                    CompositionLocalProvider(LocalNavAnimatedScope provides this) { Page { OnboardingScreen() } }
                 }
                 composable<HomeRoute>(
-                    exitTransition = { fadeOut(tween(300)) },
-                    popEnterTransition = { fadeIn(tween(300)) },
+                    exitTransition = {
+                        if (targetState.destination.hasRoute<ViewerRoute>()) fadeOut(tween(300)) else slideOut()
+                    },
+                    popEnterTransition = {
+                        if (initialState.destination.hasRoute<ViewerRoute>()) fadeIn(tween(300)) else popIn()
+                    },
                 ) {
-                    CompositionLocalProvider(LocalNavAnimatedScope provides this) { HomeScreen() }
+                    CompositionLocalProvider(LocalNavAnimatedScope provides this) { Page { HomeScreen() } }
                 }
                 composable<ViewerRoute>(
                     enterTransition = { fadeIn(tween(250)) },
@@ -124,15 +156,15 @@ fun LumenNavHost(startOnboarding: Boolean, onNavigatorReady: (Navigator) -> Unit
                 }
                 composable<CollectionRoute> { entry ->
                     val route = entry.toRoute<CollectionRoute>()
-                    CompositionLocalProvider(LocalNavAnimatedScope provides this) { CollectionScreen(route.source, route.title) }
+                    CompositionLocalProvider(LocalNavAnimatedScope provides this) { Page { CollectionScreen(route.source, route.title) } }
                 }
-                composable<OptimizeRoute> { OptimizeScreen() }
+                composable<OptimizeRoute> { Page { OptimizeScreen() } }
                 composable<DuplicatesRoute> {
-                    CompositionLocalProvider(LocalNavAnimatedScope provides this) { DuplicatesScreen() }
+                    CompositionLocalProvider(LocalNavAnimatedScope provides this) { Page { DuplicatesScreen() } }
                 }
-                composable<ModelsRoute> { ModelsScreen() }
-                composable<SettingsRoute> { SettingsScreen() }
-                composable<BackupRoute> { BackupScreen() }
+                composable<ModelsRoute> { Page { ModelsScreen() } }
+                composable<SettingsRoute> { Page { SettingsScreen() } }
+                composable<BackupRoute> { Page { BackupScreen() } }
                 composable<EditorRoute>(
                     enterTransition = { fadeIn() + scaleIn(initialScale = 0.94f) },
                     popExitTransition = { fadeOut() + scaleOut(targetScale = 0.94f) },

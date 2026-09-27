@@ -153,9 +153,14 @@ fun MediaGrid(
     var dragUpdate by remember { mutableStateOf<((Offset) -> Unit)?>(null) }
 
     fun entryAt(position: Offset): GridEntry? {
-        val info = state.layoutInfo.visibleItemsInfo.firstOrNull {
-            position.x >= it.offset.x && position.x < it.offset.x + it.size.width &&
-                position.y >= it.offset.y && position.y < it.offset.y + it.size.height
+        // Item offsets are relative to the content start (after the top content padding), while the
+        // pointer position is relative to the grid's bounds – convert before hit testing.
+        val layout = state.layoutInfo
+        val y = position.y + layout.viewportStartOffset
+        val x = position.x
+        val info = layout.visibleItemsInfo.firstOrNull {
+            x >= it.offset.x && x < it.offset.x + it.size.width &&
+                y >= it.offset.y && y < it.offset.y + it.size.height
         } ?: return null
         return currentEntries.getOrNull(info.index - headerOffset)
     }
