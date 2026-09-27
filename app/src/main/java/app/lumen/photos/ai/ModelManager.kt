@@ -55,9 +55,13 @@ class ModelManager(private val context: Context) {
         _installed.value = scanInstalled()
     }
 
+    /** Called after a model was deleted by the user (the developer backup mirrors that). */
+    var onDeleted: ((DownloadableModel) -> Unit)? = null
+
     fun delete(model: DownloadableModel) {
         dir(model).deleteRecursively()
         refresh()
+        onDeleted?.invoke(model)
     }
 
     /**

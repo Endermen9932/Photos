@@ -30,7 +30,14 @@ class EmbeddingEngine(
     private var vision: OrtSession? = null
     private var text: OrtSession? = null
     private var tokenizer: BpeTokenizer? = null
-    private val lock = Any()
+    // One lock per tower: a session is never closed while it runs, and search is not blocked by indexing.
+    private val visionLock = Any()
+    private val textLock = Any()
+
+    /** Set by [close]; afterwards every call fails instead of silently reloading the model. */
+    @Volatile
+    var isClosed = false
+        private set
 
     private fun options(): OrtSession.SessionOptions = OrtSession.SessionOptions().apply {
         setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
@@ -42,15 +49,17 @@ class EmbeddingEngine(
         }
     }
 
-    private fun visionSession(): OrtSession = synchronized(lock) {
-        vision ?: env.createSession(manager.file(model, model.visionFile).absolutePath, options()).also { vision = it }
+    private fun visionSession(): OrtSession {
+        check(!isClosed) { "Engine closed" }
+        return vision ?: env.createSession(manager.file(model, model.visionFile).absolutePath, options()).also { vision = it }
     }
 
-    private fun textSession(): OrtSession = synchronized(lock) {
-        text ?: env.createSession(manager.file(model, model.textFile).absolutePath, options()).also { text = it }
+    private fun textSession(): OrtSession {
+        check(!isClosed) { "Engine closed" }
+        return text ?: env.createSession(manager.file(model, model.textFile).absolutePath, options()).also { text = it }
     }
 
-    private fun tokenizer(): BpeTokenizer = synchronized(lock) {
+    private fun tokenizer(): BpeTokenizer = synchronized(textLock) {
         tokenizer ?: BpeTokenizer.load(manager.file(model, model.tokenizerFile), manager.tokenizerCache(model))
             .also { tokenizer = it }
     }
@@ -58,15 +67,15 @@ class EmbeddingEngine(
     /** Pre-loads the text tower so the first search is instant. */
     fun warmUpText() {
         tokenizer()
-        textSession()
+        synchronized(textLock) { textSession() }
     }
 
-    fun releaseVision() = synchronized(lock) {
+    fun releaseVision() = synchronized(visionLock) {
         vision?.close()
         vision = null
     }
 
-    fun releaseText() = synchronized(lock) {
+    fun releaseText() = synchronized(textLock) {
         text?.close()
         text = null
     }
@@ -103,7 +112,9 @@ class EmbeddingEngine(
     }
 
     /** Returns an L2-normalised image embedding. */
-    fun embedImage(bitmap: Bitmap): FloatArray {
+    fun embedImage(bitmap: Bitmap): FloatArray = synchronized(visionLock) { runVision(bitmap) }
+
+    private fun runVision(bitmap: Bitmap): FloatArray {
         val size = model.imageSize
         val prepared = if (bitmap.width == size && bitmap.height == size && bitmap.config == Bitmap.Config.ARGB_8888) {
             bitmap
@@ -143,6 +154,10 @@ class EmbeddingEngine(
     fun embedText(query: String): FloatArray {
         val tok = tokenizer()
         val ids = tok.encode(query.trim(), BpeTokenizer.Config(maxLength = model.maxTextLength, padId = 0, lowercase = true))
+        return synchronized(textLock) { runText(ids) }
+    }
+
+    private fun runText(ids: LongArray): FloatArray {
         val session = textSession()
         val inputName = session.inputNames.firstOrNull { it.contains("input_ids") } ?: session.inputNames.first()
         OnnxTensor.createTensor(env, LongBuffer.wrap(ids), longArrayOf(1, ids.size.toLong())).use { tensor ->
@@ -177,9 +192,10 @@ class EmbeddingEngine(
         return arr
     }
 
-    override fun close() = synchronized(lock) {
-        vision?.close(); vision = null
-        text?.close(); text = null
+    override fun close() {
+        isClosed = true
+        synchronized(visionLock) { vision?.close(); vision = null }
+        synchronized(textLock) { text?.close(); text = null }
     }
 
     companion object {

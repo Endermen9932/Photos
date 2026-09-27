@@ -23,6 +23,10 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Face
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material3.TextButton
+import app.lumen.photos.work.BackgroundJobs
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -75,6 +79,11 @@ fun PeopleTab() {
     val persons by c.faces.persons.collectAsStateWithLifecycle()
     val progress by c.faces.progress.collectAsStateWithLifecycle(initialValue = null)
     val scanned by c.faces.scannedCount.collectAsStateWithLifecycle()
+    val settings by c.settings.settings.collectAsStateWithLifecycle()
+    val media by c.media.media.collectAsStateWithLifecycle()
+    val photoCount = remember(media) { media.count { it.isImage } }
+    val paused = settings.facesPaused
+    val context = LocalContext.current
     var menu by remember { mutableStateOf(false) }
     var showHidden by remember { mutableStateOf(false) }
     var modelSheet by remember { mutableStateOf(false) }
@@ -120,7 +129,7 @@ fun PeopleTab() {
                 Column(Modifier.weight(1f)) {
                     Text("Personen", style = MaterialTheme.typography.displaySmall)
                     Text(
-                        "${model!!.tier} · ${Format.count(scanned)} Fotos gescannt",
+                        "${model!!.tier} · ${Format.count(scanned)} von ${Format.count(photoCount)} Fotos gescannt",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -128,7 +137,10 @@ fun PeopleTab() {
                 Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "Mehr") }
                     DropdownMenu(menu, onDismissRequest = { menu = false }) {
-                        DropdownMenuItem(text = { Text("Jetzt scannen") }, onClick = { menu = false; c.faces.schedule(replace = true) })
+                        DropdownMenuItem(text = { Text("Jetzt scannen") }, onClick = { menu = false; scope.launch { c.faces.resume() } })
+                        if (progress != null && !paused) {
+                            DropdownMenuItem(text = { Text("Scan pausieren") }, onClick = { menu = false; scope.launch { c.faces.pause() } })
+                        }
                         DropdownMenuItem(text = { Text("Neu gruppieren") }, onClick = { menu = false; scope.launch { c.faces.regroup() } })
                         DropdownMenuItem(
                             text = { Text(if (showHidden) "Ausgeblendete verbergen" else "Ausgeblendete zeigen") },
@@ -140,25 +152,46 @@ fun PeopleTab() {
             }
         }
         item(span = { GridItemSpan(maxLineSpan) }) {
-            AnimatedVisibility(progress != null) {
+            AnimatedVisibility(progress != null || (paused && scanned < photoCount)) {
                 val p = progress
                 Column {
-                    Text(
-                        if (p != null && p.total > 0) "Gesichter suchen: ${Format.count(p.done)} von ${Format.count(p.total)}" +
-                            (if (p.msPerImage > 0) " · noch ca. ${Format.etaSeconds((p.total - p.done).toLong() * p.msPerImage / 1000)}" else "")
-                        else "Gesichtserkennung wartet …",
-                        style = MaterialTheme.typography.labelMedium
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            when {
+                                paused -> "Gesichtserkennung pausiert – es geht dort weiter, wo sie aufgehört hat"
+                                p != null && p.total > 0 -> "Gesichter suchen: ${Format.count(p.done)} von ${Format.count(p.total)}" +
+                                    (if (p.msPerImage > 0) " · noch ca. ${Format.etaSeconds((p.total - p.done).toLong() * p.msPerImage / 1000)}" else "")
+                                p != null && p.running -> "Gesichtserkennung wird vorbereitet …"
+                                p != null -> BackgroundJobs.waitingReason(context, p.state, settings.indexOnlyWhileCharging, p.attempts)
+                                else -> ""
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (paused) {
+                            TextButton(onClick = { scope.launch { c.faces.resume() } }) {
+                                Icon(Icons.Outlined.PlayArrow, null); Text(" Fortsetzen")
+                            }
+                        } else {
+                            TextButton(onClick = { scope.launch { c.faces.pause() } }) {
+                                Icon(Icons.Outlined.Pause, null); Text(" Pausieren")
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(6.dp))
-                    if (p != null && p.total > 0) LinearWavyProgressIndicator(progress = { p.done.toFloat() / p.total }, modifier = Modifier.fillMaxWidth())
-                    else LinearWavyProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    val fraction = if (photoCount > 0) (scanned.toFloat() / photoCount).coerceIn(0f, 1f) else 0f
+                    when {
+                        paused -> LinearWavyProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth(), amplitude = { 0f })
+                        p != null && p.total > 0 -> LinearWavyProgressIndicator(progress = { p.done.toFloat() / p.total }, modifier = Modifier.fillMaxWidth())
+                        else -> LinearWavyProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
                 }
             }
         }
         if (visible.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Text(
-                    if (progress != null) "Sobald Gesichter mehrfach gefunden wurden, erscheinen die Personen hier."
+                    if (progress != null || paused) "Sobald ein Gesicht auf mindestens 3 Fotos gefunden wurde, erscheint die Person hier – schon während des Scans."
                     else "Noch keine Personen gefunden. Personen erscheinen, sobald ein Gesicht auf mindestens 3 Fotos vorkommt.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 24.dp)

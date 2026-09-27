@@ -3,6 +3,7 @@ package app.lumen.photos.ai
 import android.content.Context
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
+import app.lumen.photos.work.BackgroundJobs
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkInfo
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.launchIn
@@ -42,6 +44,8 @@ data class IndexProgress(
     val total: Int,
     val msPerImage: Int,
     val modelId: String?,
+    val state: WorkInfo.State,
+    val attempts: Int,
 )
 
 data class SearchResult(
@@ -87,6 +91,8 @@ class AiRepository(
                 total = info.progress.getInt(IndexWorker.KEY_TOTAL, 0),
                 msPerImage = info.progress.getInt(IndexWorker.KEY_MS, 0),
                 modelId = info.progress.getString(IndexWorker.KEY_MODEL),
+                state = info.state,
+                attempts = info.runAttemptCount,
             )
         }
 
@@ -138,12 +144,16 @@ class AiRepository(
     }
 
     suspend fun setActiveModel(model: AiModel) {
+        val changed = settings.current.activeModelId != model.id
+        // Stop the job of the old model first – it must not keep writing with a closed engine.
+        if (changed) cancelIndexing()
         settings.update { it.copy(activeModelId = model.id) }
         engineMutex.withLock {
             engineHolder?.engine?.close()
             engineHolder = null
             synchronized(textCache) { textCache.clear() }
         }
+        if (changed && settings.current.autoIndexNewMedia && models.isInstalled(model)) scheduleIndexing(replace = true)
     }
 
     private class EngineHolder(val engine: EmbeddingEngine, val threads: Int, val xnnpack: Boolean)
@@ -178,20 +188,14 @@ class AiRepository(
         workManager.cancelUniqueWork("download-${model.id}")
     }
 
-    fun scheduleIndexing(replace: Boolean = false) {
+    /** Starts (or keeps) the indexing job. Does nothing while the user has paused indexing. */
+    fun scheduleIndexing(replace: Boolean = false, ignorePause: Boolean = false) {
         val s = settings.current
-        val request = OneTimeWorkRequestBuilder<IndexWorker>()
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiresCharging(s.indexOnlyWhileCharging)
-                    .setRequiresBatteryNotLow(true)
-                    .build()
-            )
-            .build()
+        if (s.indexPaused && !ignorePause) return
         workManager.enqueueUniqueWork(
             IndexWorker.NAME,
             if (replace) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP,
-            request
+            BackgroundJobs.request(IndexWorker::class.java, s.indexOnlyWhileCharging)
         )
     }
 
@@ -199,8 +203,36 @@ class AiRepository(
         workManager.cancelUniqueWork(IndexWorker.NAME)
     }
 
-    suspend fun clearIndex(model: AiModel) {
+    /** Pauses until [resumeIndexing] – no new photos, app start or model download restarts it. */
+    suspend fun pauseIndexing() {
+        settings.update { it.copy(indexPaused = true) }
         cancelIndexing()
+    }
+
+    suspend fun resumeIndexing() {
+        settings.update { it.copy(indexPaused = false) }
+        scheduleIndexing(replace = true, ignorePause = true)
+    }
+
+    /**
+     * Called when the app comes to the foreground: a job Android interrupted (or that is still
+     * waiting for JobScheduler) is restarted right away, while the app may promote it to a
+     * foreground service again.
+     */
+    suspend fun resumeIfStalled() {
+        val s = settings.current
+        val m = activeModel.value ?: return
+        if (s.indexPaused || !models.isInstalled(m)) return
+        val info = workManager.getWorkInfosForUniqueWorkFlow(IndexWorker.NAME).first().firstOrNull { !it.state.isFinished }
+        val indexable = media.media.value.count { s.indexVideos || it.isImage }
+        when {
+            info == null -> if (s.autoIndexNewMedia && indexable > 0 && indexedCount.value < indexable) scheduleIndexing()
+            info.state == WorkInfo.State.ENQUEUED && !s.indexOnlyWhileCharging -> scheduleIndexing(replace = true)
+        }
+    }
+
+    suspend fun clearIndex(model: AiModel) {
+        if (activeModel.value == model) cancelIndexing()
         db.embeddings().deleteModel(model.id)
         if (index.loadedModel == model.id) index.invalidate()
     }

@@ -3,7 +3,6 @@ package app.lumen.photos.work
 import android.content.Context
 import android.util.Size
 import androidx.work.CoroutineWorker
-import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import app.lumen.photos.LumenApp
@@ -11,6 +10,7 @@ import app.lumen.photos.ai.Fp16
 import app.lumen.photos.data.db.FaceEntity
 import app.lumen.photos.data.db.FaceScanEntity
 import app.lumen.photos.face.FaceEngine
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -19,7 +19,16 @@ class FaceWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
 
     override suspend fun doWork(): Result {
         val c = (applicationContext as LumenApp).container
-        return WorkLocks.hold(applicationContext, "faces", c.settings.current.keepScreenOnDuringWork) { run() }
+        if (c.settings.current.facesPaused || !BackgroundJobs.hasAnyMediaAccess(applicationContext)) return Result.success()
+        return try {
+            WorkLocks.hold(applicationContext, "faces", c.settings.current.keepScreenOnDuringWork) { run() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Don't end the scan for good on an unexpected error: retry shortly and resume.
+            android.util.Log.w("FaceWorker", "Face scan interrupted", e)
+            Result.retry()
+        }
     }
 
     private suspend fun run(): Result = withContext(Dispatchers.Default) {
@@ -32,7 +41,8 @@ class FaceWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         val photos = c.media.media.value.filter { it.isImage }
         val known = dao.scanKeys(model.id).associate { it.mediaId to it.dateModified }
         val present = photos.mapTo(HashSet()) { it.id }
-        val gone = known.keys.filter { it !in present }
+        if (photos.isEmpty()) return@withContext Result.success()
+        val gone = if (BackgroundJobs.hasFullMediaAccess(applicationContext)) known.keys.filter { it !in present } else emptyList()
         if (gone.isNotEmpty()) {
             gone.chunked(500).forEach {
                 dao.deleteFacesOfMedia(model.id, it)
@@ -46,9 +56,9 @@ class FaceWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             return@withContext Result.success()
         }
 
-        val cancel = WorkManager.getInstance(applicationContext).createCancelPendingIntent(id)
+        val cancel = WorkActionReceiver.pauseIntent(applicationContext, WorkActionReceiver.ACTION_PAUSE_FACES)
         val title = "Gesichtserkennung · ${model.tier}"
-        safeForeground(Notifications.progress(applicationContext, Notifications.ID_FACES, title, "Wird vorbereitet …", 0, todo.size, cancel))
+        safeForeground(Notifications.progress(applicationContext, Notifications.ID_FACES, title, "Wird vorbereitet …", 0, todo.size, cancel, cancelLabel = "Pausieren"))
 
         val engine = FaceEngine(model, c.models, c.settings.current.aiThreads)
         val resolver = applicationContext.contentResolver
@@ -56,9 +66,10 @@ class FaceWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         var totalMs = 0L
         var lastUi = 0L
         var sinceAssign = 0
+        var lastAssign = System.currentTimeMillis()
         try {
             for (item in todo) {
-                if (isStopped) break
+                if (isStopped || c.faces.activeModel.value != model || c.settings.current.facesPaused) break
                 val t0 = System.currentTimeMillis()
                 val faces = runCatching {
                     val bmp = resolver.loadThumbnail(item.uri, Size(THUMB, THUMB), null)
@@ -90,11 +101,13 @@ class FaceWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 done++
                 sinceAssign += faces.size
 
-                if (sinceAssign >= 200) {
+                val now = System.currentTimeMillis()
+                // Group regularly so persons show up while the scan is still running.
+                if (sinceAssign >= 200 || (sinceAssign > 0 && now - lastAssign > ASSIGN_INTERVAL_MS)) {
                     c.faces.assignUnassigned(model)
                     sinceAssign = 0
+                    lastAssign = now
                 }
-                val now = System.currentTimeMillis()
                 if (now - lastUi > 800 || done == todo.size) {
                     lastUi = now
                     val ms = (totalMs / done).toInt()
@@ -102,7 +115,7 @@ class FaceWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     safeForeground(
                         Notifications.progress(
                             applicationContext, Notifications.ID_FACES, title,
-                            "$done von ${todo.size} Fotos", done, todo.size, cancel
+                            "$done von ${todo.size} Fotos", done, todo.size, cancel, cancelLabel = "Pausieren"
                         )
                     )
                 }
@@ -124,5 +137,6 @@ class FaceWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         const val KEY_MS = "ms"
         private const val THUMB = 1280
         private const val MAX_FACES = 30
+        private const val ASSIGN_INTERVAL_MS = 8_000L
     }
 }

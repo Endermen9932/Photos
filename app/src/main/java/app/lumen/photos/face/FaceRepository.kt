@@ -1,9 +1,8 @@
 package app.lumen.photos.face
 
 import android.content.Context
-import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
+import app.lumen.photos.work.BackgroundJobs
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import app.lumen.photos.ai.EmbeddingEngine
@@ -28,6 +27,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.launchIn
@@ -49,7 +49,14 @@ data class Person(
     val displayName: String get() = name ?: "Unbekannt"
 }
 
-data class FaceProgress(val running: Boolean, val done: Int, val total: Int, val msPerImage: Int)
+data class FaceProgress(
+    val running: Boolean,
+    val done: Int,
+    val total: Int,
+    val msPerImage: Int,
+    val state: WorkInfo.State,
+    val attempts: Int,
+)
 
 /** A face shown on a swipe card. */
 data class ReviewCandidate(val face: FaceEntity, val item: MediaItem, val similarity: Float, val alreadyAssigned: Boolean)
@@ -102,6 +109,8 @@ class FaceRepository(
             info.progress.getInt(FaceWorker.KEY_DONE, 0),
             info.progress.getInt(FaceWorker.KEY_TOTAL, 0),
             info.progress.getInt(FaceWorker.KEY_MS, 0),
+            info.state,
+            info.runAttemptCount,
         )
     }
 
@@ -117,21 +126,47 @@ class FaceRepository(
         }.launchIn(scope)
     }
 
-    fun schedule(replace: Boolean = false) {
-        val request = OneTimeWorkRequestBuilder<FaceWorker>()
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiresCharging(settings.current.indexOnlyWhileCharging)
-                    .setRequiresBatteryNotLow(true)
-                    .build()
-            )
-            .build()
-        workManager.enqueueUniqueWork(FaceWorker.NAME, if (replace) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)
+    /** Starts (or keeps) the face scan. Does nothing while the user has paused it. */
+    fun schedule(replace: Boolean = false, ignorePause: Boolean = false) {
+        val s = settings.current
+        if (s.facesPaused && !ignorePause) return
+        workManager.enqueueUniqueWork(
+            FaceWorker.NAME,
+            if (replace) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP,
+            BackgroundJobs.request(FaceWorker::class.java, s.indexOnlyWhileCharging)
+        )
     }
 
     fun cancel() = workManager.cancelUniqueWork(FaceWorker.NAME)
 
+    suspend fun pause() {
+        settings.update { it.copy(facesPaused = true) }
+        cancel()
+    }
+
+    /** Resumes a paused scan, or starts one ("Jetzt scannen"). Already scanned photos are skipped. */
+    suspend fun resume() {
+        settings.update { it.copy(facesPaused = false) }
+        schedule(replace = true, ignorePause = true)
+    }
+
+    /** Restarts a scan Android interrupted as soon as the app is in the foreground again. */
+    suspend fun resumeIfStalled() {
+        val s = settings.current
+        val m = activeModel.value ?: return
+        if (s.facesPaused || !models.isInstalled(m)) return
+        val info = workManager.getWorkInfosForUniqueWorkFlow(FaceWorker.NAME).first().firstOrNull { !it.state.isFinished }
+        val photos = media.media.value.count { it.isImage }
+        when {
+            info == null -> if (s.autoIndexNewMedia && photos > 0 && scannedCount.value < photos) schedule()
+            info.state == WorkInfo.State.ENQUEUED && !s.indexOnlyWhileCharging -> schedule(replace = true)
+        }
+    }
+
     suspend fun setActiveModel(model: FaceModel) {
+        val changed = settings.current.activeFaceModelId != model.id
+        // The running scan belongs to the old model – stop it before switching.
+        if (changed) cancel()
         settings.update { it.copy(activeFaceModelId = model.id) }
     }
 
@@ -326,7 +361,7 @@ class FaceRepository(
     suspend fun facesOfPerson(id: Long) = dao.facesOfPerson(id)
 
     suspend fun resetModel(model: FaceModel) {
-        cancel()
+        if (activeModel.value == model) cancel()
         dao.deleteAllFaces(model.id)
         dao.deleteAllScans(model.id)
         dao.deleteAllPersons(model.id)

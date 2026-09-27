@@ -5,6 +5,7 @@ import android.content.Context
 import app.lumen.photos.ai.AiRepository
 import app.lumen.photos.ai.ModelManager
 import app.lumen.photos.ai.SearchIndex
+import app.lumen.photos.data.backup.DevBackup
 import app.lumen.photos.data.db.LumenDatabase
 import app.lumen.photos.data.media.MediaRepository
 import app.lumen.photos.data.settings.SettingsRepository
@@ -27,6 +28,10 @@ import coil3.video.VideoFrameDecoder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 
 /** Manual dependency container – small enough that a DI framework would only add weight. */
 class AppContainer(context: Context) {
@@ -45,6 +50,7 @@ class AppContainer(context: Context) {
     val videoCompressor = VideoCompressor(context, db.optimized())
     val faces = FaceRepository(context, db.faces(), settings, models, media, scope)
     val lists = MediaListRegistry()
+    val devBackup = DevBackup(context, this)
 }
 
 class LumenApp : Application(), SingletonImageLoader.Factory {
@@ -53,10 +59,24 @@ class LumenApp : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
+        // A restore from the developer backup is applied before anything opens the database.
+        val restored = DevBackup.applyPendingRestore(this)
         container = AppContainer(this)
         Notifications.createChannels(this)
         container.ai.start()
         container.faces.start()
+        container.devBackup.start(restored)
+        // Coming back to the app restarts indexing jobs Android interrupted in the background.
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                container.scope.launch {
+                    runCatching { container.ai.resumeIfStalled() }
+                    runCatching { container.faces.resumeIfStalled() }
+                }
+            }
+
+            override fun onStop(owner: LifecycleOwner) = container.devBackup.requestBackup()
+        })
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =

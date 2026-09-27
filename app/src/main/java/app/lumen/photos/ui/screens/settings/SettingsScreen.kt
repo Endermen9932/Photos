@@ -64,7 +64,12 @@ fun SettingsScreen() {
     val canManage = remember(tick) { c.media.canManageMedia() }
     val manageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { tick++ }
     fun update(t: (AppSettings) -> AppSettings) = scope.launch { c.settings.update(t) }
-    val indexChanged = { scope.launch { c.ai.scheduleIndexing(replace = true) } }
+    fun chargingChanged(v: Boolean) = scope.launch {
+        c.settings.update { it.copy(indexOnlyWhileCharging = v) }
+        // Re-create the jobs with the new condition (paused jobs stay paused).
+        c.ai.scheduleIndexing(replace = true)
+        c.faces.schedule(replace = true)
+    }
 
     Scaffold(topBar = { TopAppBar(title = { Text("Einstellungen") }, navigationIcon = { BackButton { nav.back() } }) }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
@@ -94,6 +99,11 @@ fun SettingsScreen() {
             }
             SwitchRow("AMOLED-Schwarz", "Reines Schwarz im dunklen Design – spart Akku auf dem OLED-Display", s.amoledBlack) { v -> update { it.copy(amoledBlack = v) } }
             SwitchRow("Reduzierte Bewegung", "Ruhigere Standard-Animationen statt Expressive-Federn", s.reduceMotion) { v -> update { it.copy(reduceMotion = v) } }
+            SwitchRow(
+                "Animation bei Zurück-Geste",
+                "Seiten und Fotos folgen beim Zurückwischen dem Finger. Aus: Seiten schließen sofort ohne Animation",
+                s.backGestureAnimations
+            ) { v -> update { it.copy(backGestureAnimations = v) } }
 
             SectionTitle("Galerie")
             ListItem(
@@ -129,7 +139,11 @@ fun SettingsScreen() {
                 }
             )
             SwitchRow("Neue Fotos automatisch indexieren", null, s.autoIndexNewMedia) { v -> update { it.copy(autoIndexNewMedia = v) } }
-            SwitchRow("Nur beim Laden indexieren", "Empfohlen für die großen Modelle", s.indexOnlyWhileCharging) { v -> update { it.copy(indexOnlyWhileCharging = v) }; indexChanged() }
+            SwitchRow(
+                "Nur beim Laden indexieren",
+                "Aus: Indexierung und Gesichtserkennung laufen sofort, ganz ohne Akku-Bedingungen",
+                s.indexOnlyWhileCharging
+            ) { v -> chargingChanged(v) }
             SwitchRow(
                 "Display während Aufgaben anlassen",
                 "Beim Indexieren und Komprimieren wird der Bildschirm gedimmt, geht aber nie aus – so läuft alles mit voller Geschwindigkeit",
@@ -165,6 +179,8 @@ fun SettingsScreen() {
                     Text("Offline-Galerie ohne Google-Dienste. KI: ONNX Runtime mit MobileCLIP (Apple) und SigLIP 2 (Google, Apache 2.0) · Bildanzeige: Coil & Telephoto · Video: Media3")
                 }
             )
+
+            DeveloperSection()
         }
     }
 }

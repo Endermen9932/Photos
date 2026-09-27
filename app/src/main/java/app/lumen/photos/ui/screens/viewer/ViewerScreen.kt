@@ -2,7 +2,14 @@ package app.lumen.photos.ui.screens.viewer
 
 import android.app.Activity
 import android.widget.Toast
+import androidx.activity.BackEventCompat
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.shape.RoundedCornerShape
+import app.lumen.photos.ui.LocalAppSettings
+import kotlinx.coroutines.CancellationException
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -98,6 +105,33 @@ fun ViewerScreen(source: String, startId: Long) {
     var menu by remember { mutableStateOf(false) }
     var dismissFraction by remember { mutableStateOf(0f) }
 
+    // Predictive back: the photo shrinks and follows the finger, the black backdrop fades. On
+    // release the viewer closes from exactly there (without the shared-element flight, which
+    // would first swap the photo for the cropped grid thumbnail).
+    val backAnimations = LocalAppSettings.current.backGestureAnimations
+    val backProgress = remember { Animatable(0f) }
+    val backOffsetY = remember { Animatable(0f) }
+    var backFromLeft by remember { mutableStateOf(true) }
+    var closingByGesture by remember { mutableStateOf(false) }
+    PredictiveBackHandler(enabled = backAnimations && info == null && !closingByGesture) { events ->
+        var startY = Float.NaN
+        try {
+            events.collect { e ->
+                if (startY.isNaN()) startY = e.touchY
+                backFromLeft = e.swipeEdge == BackEventCompat.EDGE_LEFT
+                backProgress.snapTo(e.progress)
+                backOffsetY.snapTo(e.touchY - startY)
+            }
+            closingByGesture = true
+            nav.back()
+        } catch (e: CancellationException) {
+            scope.launch { backProgress.animateTo(0f, spring(dampingRatio = 0.8f)) }
+            scope.launch { backOffsetY.animateTo(0f, spring(dampingRatio = 0.8f)) }
+            throw e
+        }
+    }
+    val backFraction = backProgress.value
+
     ImmersiveMode(!chrome)
 
     if (list == null) {
@@ -122,13 +156,25 @@ fun ViewerScreen(source: String, startId: Long) {
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = (1f - dismissFraction * 1.6f).coerceIn(0f, 1f)))
+            .background(Color.Black.copy(alpha = (1f - dismissFraction * 1.6f - backFraction * 0.55f).coerceIn(0f, 1f)))
     ) {
         HorizontalPager(
             state = pager,
             beyondViewportPageCount = 1,
             key = { list.getOrNull(it)?.id ?: it },
-            modifier = Modifier.fillMaxSize()
+            userScrollEnabled = backFraction == 0f,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val p = backProgress.value
+                    val scale = 1f - 0.22f * p
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = (if (backFromLeft) 1f else -1f) * p * 28.dp.toPx()
+                    translationY = backOffsetY.value * 0.45f
+                    shape = RoundedCornerShape(28.dp * p)
+                    clip = p > 0f
+                }
         ) { page ->
             val item = list[page]
             val flick = rememberFlickToDismissState(dismissThresholdRatio = 0.12f, rotateOnDrag = false)
@@ -153,7 +199,7 @@ fun ViewerScreen(source: String, startId: Long) {
                             aspectRatio = item.aspectRatio,
                             active = isCurrent,
                             showControls = chrome,
-                            modifier = Modifier.sharedMedia(item.id, enabled = isCurrent),
+                            modifier = Modifier.sharedMedia(item.id, enabled = isCurrent && !closingByGesture),
                         )
                     }
                 } else {
@@ -169,7 +215,7 @@ fun ViewerScreen(source: String, startId: Long) {
                         contentDescription = item.name,
                         state = zoom,
                         onClick = { chrome = !chrome },
-                        modifier = Modifier.fillMaxSize().sharedMedia(item.id, enabled = isCurrent),
+                        modifier = Modifier.fillMaxSize().sharedMedia(item.id, enabled = isCurrent && !closingByGesture),
                     )
                 }
             }
@@ -177,7 +223,7 @@ fun ViewerScreen(source: String, startId: Long) {
 
         // Top bar.
         AnimatedVisibility(
-            visible = chrome && dismissFraction < 0.02f,
+            visible = chrome && dismissFraction < 0.02f && backFraction == 0f,
             enter = fadeIn() + slideInVertically { -it },
             exit = fadeOut() + slideOutVertically { -it },
             modifier = Modifier.align(Alignment.TopCenter)
@@ -246,7 +292,7 @@ fun ViewerScreen(source: String, startId: Long) {
 
         // Bottom floating toolbar.
         AnimatedVisibility(
-            visible = chrome && dismissFraction < 0.02f && current != null,
+            visible = chrome && dismissFraction < 0.02f && backFraction == 0f && current != null,
             enter = fadeIn() + slideInVertically { it },
             exit = fadeOut() + slideOutVertically { it },
             modifier = Modifier

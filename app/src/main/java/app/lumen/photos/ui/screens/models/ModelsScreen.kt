@@ -68,6 +68,7 @@ import app.lumen.photos.ai.AiModel
 import app.lumen.photos.ai.IndexProgress
 import app.lumen.photos.ai.ModelCatalog
 import app.lumen.photos.container
+import app.lumen.photos.work.BackgroundJobs
 import app.lumen.photos.ui.components.BackButton
 import app.lumen.photos.ui.components.Dots
 import app.lumen.photos.ui.components.Format
@@ -117,9 +118,11 @@ fun ModelsScreen() {
                     indexed = indexed,
                     total = indexable,
                     progress = progress,
-                    onStart = { c.ai.scheduleIndexing(replace = true) },
-                    onPause = { c.ai.cancelIndexing() },
-                    onReset = { active?.let { m -> scope.launch { c.ai.clearIndex(m); c.ai.scheduleIndexing() } } },
+                    paused = settings.indexPaused,
+                    waitingText = progress?.let { p -> BackgroundJobs.waitingReason(context, p.state, settings.indexOnlyWhileCharging, p.attempts) },
+                    onStart = { scope.launch { c.ai.resumeIndexing() } },
+                    onPause = { scope.launch { c.ai.pauseIndexing() } },
+                    onReset = { active?.let { m -> scope.launch { c.ai.clearIndex(m); c.ai.resumeIndexing() } } },
                 )
             }
             item {
@@ -187,6 +190,8 @@ private fun IndexCard(
     indexed: Int,
     total: Int,
     progress: IndexProgress?,
+    paused: Boolean,
+    waitingText: String?,
     onStart: () -> Unit,
     onPause: () -> Unit,
     onReset: () -> Unit,
@@ -227,16 +232,27 @@ private fun IndexCard(
                             style = MaterialTheme.typography.labelMedium,
                             modifier = Modifier.padding(top = 8.dp)
                         )
-                    } else if (!p.running) {
-                        Text("Wartet auf passende Bedingungen (z. B. Laden) …", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
+                    } else if (p.running) {
+                        Text("Wird vorbereitet …", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
+                    } else if (waitingText != null) {
+                        Text(waitingText, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
                     }
+                }
+                if (paused) {
+                    Text(
+                        "Pausiert – bereits indexierte Fotos bleiben erhalten, es geht dort weiter, wo du aufgehört hast.",
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (progress != null) {
+                    if (progress != null && !paused) {
                         FilledTonalButton(onClick = onPause) { Icon(Icons.Outlined.Pause, null); Text(" Pausieren") }
                     } else {
-                        Button(onClick = onStart, shapes = ButtonDefaults.shapes()) { Icon(Icons.Outlined.PlayArrow, null); Text(" Indexieren") }
+                        Button(onClick = onStart, shapes = ButtonDefaults.shapes()) {
+                            Icon(Icons.Outlined.PlayArrow, null); Text(if (paused) " Fortsetzen" else " Indexieren")
+                        }
                     }
                     OutlinedButton(onClick = onReset) { Icon(Icons.Outlined.Refresh, null); Text(" Neu aufbauen") }
                 }

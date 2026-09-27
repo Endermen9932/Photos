@@ -3,12 +3,12 @@ package app.lumen.photos.work
 import android.content.Context
 import android.util.Size
 import androidx.work.CoroutineWorker
-import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import app.lumen.photos.LumenApp
 import app.lumen.photos.ai.Fp16
 import app.lumen.photos.data.db.EmbeddingEntity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -20,7 +20,17 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
 
     override suspend fun doWork(): Result {
         val c = (applicationContext as LumenApp).container
-        return WorkLocks.hold(applicationContext, "index", c.settings.current.keepScreenOnDuringWork) { run() }
+        if (c.settings.current.indexPaused || !BackgroundJobs.hasAnyMediaAccess(applicationContext)) return Result.success()
+        return try {
+            WorkLocks.hold(applicationContext, "index", c.settings.current.keepScreenOnDuringWork) { run() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Never end for good on an unexpected error – WorkManager retries shortly and the
+            // job resumes where it stopped.
+            android.util.Log.w("IndexWorker", "Indexing interrupted", e)
+            Result.retry()
+        }
     }
 
     private suspend fun run(): Result = withContext(Dispatchers.Default) {
@@ -37,7 +47,8 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
 
         // Forget files that no longer exist.
         val present = all.mapTo(HashSet()) { it.id }
-        val gone = known.keys.filter { it !in present }
+        if (all.isEmpty()) return@withContext Result.success()
+        val gone = if (BackgroundJobs.hasFullMediaAccess(applicationContext)) known.keys.filter { it !in present } else emptyList()
         if (gone.isNotEmpty()) {
             gone.chunked(500).forEach { dao.delete(model.id, it) }
             c.index.remove(model.id, gone)
@@ -49,10 +60,10 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         if (todo.isEmpty()) return@withContext Result.success()
 
         c.index.ensureLoaded(model.id)
-        val engine = c.ai.engine(model)
-        val cancel = WorkManager.getInstance(applicationContext).createCancelPendingIntent(id)
+        var engine = c.ai.engine(model)
+        val cancel = WorkActionReceiver.pauseIntent(applicationContext, WorkActionReceiver.ACTION_PAUSE_INDEX)
         val title = "KI-Indexierung · ${model.tier}"
-        safeForeground(Notifications.progress(applicationContext, Notifications.ID_INDEX, title, "Wird vorbereitet …", 0, todo.size, cancel))
+        safeForeground(Notifications.progress(applicationContext, Notifications.ID_INDEX, title, "Wird vorbereitet …", 0, todo.size, cancel, cancelLabel = "Pausieren"))
 
         val thumbSize = (model.imageSize * 1.5f).toInt().coerceAtLeast(320)
         val batch = ArrayList<EmbeddingEntity>(32)
@@ -62,9 +73,10 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         val resolver = applicationContext.contentResolver
         try {
             for (item in todo) {
-                if (isStopped) break
+                // Model switched or paused meanwhile: stop without touching the index.
+                if (isStopped || c.ai.activeModel.value != model || c.settings.current.indexPaused) break
                 val t0 = System.currentTimeMillis()
-                val vector: FloatArray? = runCatching {
+                fun embed(): FloatArray? = runCatching {
                     val bmp = resolver.loadThumbnail(item.uri, Size(thumbSize, thumbSize), null)
                     try {
                         engine.embedImage(bmp)
@@ -72,6 +84,15 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
                         bmp.recycle()
                     }
                 }.getOrNull()
+                var vector = embed()
+                if (vector == null && engine.isClosed) {
+                    // The shared engine was replaced (e.g. new thread count) – never store an
+                    // empty vector because of that, just continue with the new engine.
+                    if (isStopped || c.ai.activeModel.value != model) break
+                    engine = c.ai.engine(model)
+                    vector = embed()
+                    if (vector == null && engine.isClosed) break
+                }
                 totalMs += System.currentTimeMillis() - t0
                 batch += EmbeddingEntity(item.id, model.id, item.dateModified, vector?.let { Fp16.encode(it) } ?: ByteArray(0))
                 if (vector != null) c.index.put(model.id, item.id, vector)
@@ -93,14 +114,14 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
                         Notifications.progress(
                             applicationContext, Notifications.ID_INDEX, title,
                             "$done von ${todo.size} · noch ca. ${formatDuration(remaining)}",
-                            done, todo.size, cancel
+                            done, todo.size, cancel, cancelLabel = "Pausieren"
                         )
                     )
                 }
             }
         } finally {
             if (batch.isNotEmpty()) withContext(kotlinx.coroutines.NonCancellable) { dao.upsert(batch.toList()) }
-            engine.releaseVision()
+            if (!engine.isClosed) engine.releaseVision()
         }
         if (done == todo.size && todo.size > 20) {
             Notifications.done(

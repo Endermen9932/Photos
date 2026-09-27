@@ -1,6 +1,14 @@
 package app.lumen.photos.ui.navigation
 
+import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.core.animateDp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.unit.dp
+import app.lumen.photos.ui.LocalAppSettings
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SharedTransitionLayout
@@ -87,12 +95,12 @@ class Navigator(private val controller: NavHostController) {
 
 val LocalNavigator = staticCompositionLocalOf<Navigator> { error("No navigator") }
 
-// Material 3 "shared axis X" transitions with emphasized easing. They are also driven by the
-// predictive back gesture, so the previous screen follows the finger and settles smoothly.
+// Material 3 "shared axis X" transitions with emphasized easing for opening screens.
 private val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
-private val EmphasizedAccelerate = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
+private val Standard = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 private const val ENTER_MS = 500
 private const val EXIT_MS = 350
+private const val POP_MS = 420
 
 private val slideIn: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
     slideInHorizontally(tween(ENTER_MS, easing = EmphasizedDecelerate)) { (it * 0.3f).toInt() } +
@@ -103,20 +111,37 @@ private val slideOut: AnimatedContentTransitionScope<NavBackStackEntry>.() -> Ex
         fadeOut(tween(EXIT_MS / 2, easing = LinearEasing)) +
         scaleOut(tween(ENTER_MS, easing = EmphasizedDecelerate), targetScale = 0.96f)
 }
+// Closing a screen is driven by the predictive back gesture: the transition is seeked with the
+// finger, so every part must already move early in the gesture (no accelerate curves). The page
+// shrinks into a rounded card and drifts to the side while the previous screen grows in behind
+// it; only after letting go does it fade away.
 private val popIn: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-    slideInHorizontally(tween(ENTER_MS, easing = EmphasizedDecelerate)) { -(it * 0.1f).toInt() } +
-        fadeIn(tween(ENTER_MS / 2, delayMillis = 50, easing = LinearEasing)) +
-        scaleIn(tween(ENTER_MS, easing = EmphasizedDecelerate), initialScale = 0.96f)
+    scaleIn(tween(POP_MS, easing = Standard), initialScale = 0.92f) +
+        slideInHorizontally(tween(POP_MS, easing = Standard)) { -(it * 0.06f).toInt() } +
+        fadeIn(tween(POP_MS, easing = LinearEasing), initialAlpha = 0.35f)
 }
 private val popOut: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-    slideOutHorizontally(tween(EXIT_MS, easing = EmphasizedAccelerate)) { (it * 0.3f).toInt() } +
-        fadeOut(tween(EXIT_MS, easing = EmphasizedAccelerate))
+    scaleOut(tween(POP_MS, easing = Standard), targetScale = 0.86f) +
+        slideOutHorizontally(tween(POP_MS, easing = Standard)) { (it * 0.18f).toInt() } +
+        fadeOut(tween(POP_MS / 2, delayMillis = POP_MS / 2, easing = LinearEasing))
 }
+private val PageCorner = 32.dp
 
-/** Opaque page with the right content colour, so text is readable and pages never bleed through. */
+/**
+ * Opaque page with the right content colour, so text is readable and pages never bleed through.
+ * While it animates (e.g. during the back gesture) its corners round off like a card.
+ */
 @Composable
-private fun Page(content: @Composable () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground, modifier = Modifier.fillMaxSize()) {
+private fun AnimatedContentScope.Page(content: @Composable () -> Unit) {
+    val corner by transition.animateDp(transitionSpec = { tween(POP_MS, easing = Standard) }, label = "pageCorner") {
+        if (it == EnterExitState.Visible) 0.dp else PageCorner
+    }
+    Surface(
+        color = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
+        shape = if (corner > 0.dp) RoundedCornerShape(corner) else RectangleShape,
+        modifier = Modifier.fillMaxSize()
+    ) {
         content()
     }
 }
@@ -125,6 +150,12 @@ private fun Page(content: @Composable () -> Unit) {
 fun LumenNavHost(startOnboarding: Boolean, onNavigatorReady: (Navigator) -> Unit) {
     val controller = rememberNavController()
     val navigator = remember(controller) { Navigator(controller) }
+    // "Animation bei Zurück-Geste" off: going back switches screens instantly.
+    val backAnimations = LocalAppSettings.current.backGestureAnimations
+    val popEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition =
+        if (backAnimations) popIn else { { EnterTransition.None } }
+    val popExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition =
+        if (backAnimations) popOut else { { ExitTransition.None } }
     androidx.compose.runtime.LaunchedEffect(navigator) { onNavigatorReady(navigator) }
     SharedTransitionLayout {
         CompositionLocalProvider(LocalSharedTransitionScope provides this, LocalNavigator provides navigator) {
@@ -133,8 +164,8 @@ fun LumenNavHost(startOnboarding: Boolean, onNavigatorReady: (Navigator) -> Unit
                 startDestination = if (startOnboarding) OnboardingRoute else HomeRoute,
                 enterTransition = slideIn,
                 exitTransition = slideOut,
-                popEnterTransition = popIn,
-                popExitTransition = popOut,
+                popEnterTransition = popEnter,
+                popExitTransition = popExit,
             ) {
                 composable<OnboardingRoute> {
                     CompositionLocalProvider(LocalNavAnimatedScope provides this) { Page { OnboardingScreen() } }
@@ -144,7 +175,12 @@ fun LumenNavHost(startOnboarding: Boolean, onNavigatorReady: (Navigator) -> Unit
                         if (targetState.destination.hasRoute<ViewerRoute>()) fadeOut(tween(300)) else slideOut()
                     },
                     popEnterTransition = {
-                        if (initialState.destination.hasRoute<ViewerRoute>()) fadeIn(tween(300)) else popIn()
+                        when {
+                            !backAnimations -> EnterTransition.None
+                            initialState.destination.hasRoute<ViewerRoute>() ->
+                                fadeIn(tween(300)) + scaleIn(tween(POP_MS, easing = Standard), initialScale = 0.96f)
+                            else -> popIn()
+                        }
                     },
                 ) {
                     CompositionLocalProvider(LocalNavAnimatedScope provides this) { Page { HomeScreen() } }
@@ -152,15 +188,20 @@ fun LumenNavHost(startOnboarding: Boolean, onNavigatorReady: (Navigator) -> Unit
                 composable<ViewerRoute>(
                     enterTransition = { fadeIn(tween(250)) },
                     exitTransition = { fadeOut(tween(250)) },
-                    popEnterTransition = { fadeIn(tween(250)) },
-                    popExitTransition = { fadeOut(tween(300)) },
+                    popEnterTransition = { if (backAnimations) fadeIn(tween(250)) else EnterTransition.None },
+                    // The viewer shrinks the photo with the finger itself (see ViewerScreen) and
+                    // then lets it shrink a little further while fading out.
+                    popExitTransition = {
+                        if (backAnimations) fadeOut(tween(300)) + scaleOut(tween(300, easing = Standard), targetScale = 0.9f)
+                        else ExitTransition.None
+                    },
                 ) { entry ->
                     val route = entry.toRoute<ViewerRoute>()
                     CompositionLocalProvider(LocalNavAnimatedScope provides this) { ViewerScreen(route.source, route.id) }
                 }
                 composable<ExternalViewerRoute>(
                     enterTransition = { fadeIn() + scaleIn(initialScale = 0.92f) },
-                    popExitTransition = { fadeOut() + scaleOut(targetScale = 0.92f) },
+                    popExitTransition = { if (backAnimations) popOut() else ExitTransition.None },
                 ) { entry ->
                     val route = entry.toRoute<ExternalViewerRoute>()
                     ExternalViewerScreen(route.uri, route.mime)
@@ -182,11 +223,16 @@ fun LumenNavHost(startOnboarding: Boolean, onNavigatorReady: (Navigator) -> Unit
                 }
                 composable<ReviewRoute>(
                     enterTransition = { slideInVertically(tween(ENTER_MS, easing = EmphasizedDecelerate)) { it / 3 } + fadeIn(tween(250)) },
-                    popExitTransition = { slideOutVertically(tween(EXIT_MS, easing = EmphasizedAccelerate)) { it / 3 } + fadeOut(tween(EXIT_MS)) },
+                    popExitTransition = {
+                        if (backAnimations) scaleOut(tween(POP_MS, easing = Standard), targetScale = 0.9f) +
+                            slideOutVertically(tween(POP_MS, easing = Standard)) { it / 4 } +
+                            fadeOut(tween(POP_MS / 2, delayMillis = POP_MS / 2))
+                        else ExitTransition.None
+                    },
                 ) { entry -> Page { ReviewScreen(entry.toRoute<ReviewRoute>().personId) } }
                 composable<EditorRoute>(
                     enterTransition = { fadeIn() + scaleIn(initialScale = 0.94f) },
-                    popExitTransition = { fadeOut() + scaleOut(targetScale = 0.94f) },
+                    popExitTransition = { if (backAnimations) popOut() else ExitTransition.None },
                 ) { entry -> EditorScreen(entry.toRoute<EditorRoute>().id) }
             }
         }

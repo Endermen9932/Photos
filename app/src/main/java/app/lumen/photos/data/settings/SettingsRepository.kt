@@ -5,11 +5,13 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -83,11 +85,16 @@ data class AppSettings(
     val showVideosInTimeline: Boolean = true,
     val showMemories: Boolean = true,
     val reduceMotion: Boolean = false,
+    /** Screens and photos follow the finger during the Android back gesture. */
+    val backGestureAnimations: Boolean = true,
     val activeModelId: String? = null,
     val activeFaceModelId: String? = null,
     val aiThreads: Int = 6,
     val useXnnpack: Boolean = false,
     val indexOnlyWhileCharging: Boolean = false,
+    /** Paused by the user – nothing restarts the job until they resume it. */
+    val indexPaused: Boolean = false,
+    val facesPaused: Boolean = false,
     val autoIndexNewMedia: Boolean = true,
     val indexVideos: Boolean = true,
     /** Keep the display on (dimmed) while indexing or optimising. */
@@ -95,6 +102,8 @@ data class AppSettings(
     /** Higher = fewer, more precise results. Standard deviations above the mean score. */
     val searchStrictness: Float = 2.2f,
     val onboardingDone: Boolean = false,
+    /** Mirrors models, indexes and settings to Documents/Photos so a reinstall loses nothing. */
+    val developerMode: Boolean = false,
     val optimizer: OptimizerSettings = OptimizerSettings(),
     val backup: BackupSettings = BackupSettings(),
     val videoOptimizer: VideoOptimizerSettings = VideoOptimizerSettings(),
@@ -112,17 +121,22 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
     /** Loaded synchronously once so the first frame already uses the right theme. */
     private val initial: AppSettings = runBlocking { decode(context.dataStore.data.first()[key]) }
 
-    val settings: StateFlow<AppSettings> = context.dataStore.data
-        .map { decode(it[key]) }
-        .stateIn(scope, SharingStarted.Eagerly, initial)
+    private val state = MutableStateFlow(initial)
+    val settings: StateFlow<AppSettings> = state.asStateFlow()
+
+    init {
+        context.dataStore.data.map { decode(it[key]) }.onEach { state.value = it }.launchIn(scope)
+    }
 
     val current: AppSettings get() = settings.value
 
+    /** Once this returns, [current] already contains the change (jobs scheduled next rely on it). */
     suspend fun update(transform: (AppSettings) -> AppSettings) {
-        context.dataStore.edit { prefs ->
+        val saved = context.dataStore.edit { prefs ->
             val next = transform(decode(prefs[key]))
             prefs[key] = json.encodeToString(AppSettings.serializer(), next)
         }
+        state.value = decode(saved[key])
     }
 
     suspend fun updateVideoOptimizer(transform: (VideoOptimizerSettings) -> VideoOptimizerSettings) =

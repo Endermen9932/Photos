@@ -52,6 +52,7 @@ object Notifications {
         total: Int,
         cancelIntent: PendingIntent? = null,
         dataSync: Boolean = false,
+        cancelLabel: String = "Abbrechen",
     ): ForegroundInfo {
         val builder = NotificationCompat.Builder(context, CHANNEL_WORK)
             .setSmallIcon(R.drawable.ic_notification)
@@ -64,7 +65,7 @@ object Notifications {
             .setProgress(total.coerceAtLeast(0), done.coerceIn(0, total.coerceAtLeast(0)), total <= 0)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
         if (cancelIntent != null) {
-            builder.addAction(0, "Abbrechen", cancelIntent)
+            builder.addAction(0, cancelLabel, cancelIntent)
         }
         val type = when {
             dataSync -> ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC

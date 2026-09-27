@@ -37,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
+import app.lumen.photos.ui.screens.settings.RestoreFromBackupButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -149,7 +150,8 @@ fun OnboardingScreen() {
         ) {
             Text("Los geht's", style = MaterialTheme.typography.titleMedium)
         }
-        Spacer(Modifier.height(20.dp))
+        RestoreFromBackupButton(Modifier.padding(top = 8.dp))
+        Spacer(Modifier.height(12.dp))
     }
 }
 

@@ -77,6 +77,7 @@ import app.lumen.photos.AppContainer
 import app.lumen.photos.MediaListRegistry
 import app.lumen.photos.ai.SearchResult
 import app.lumen.photos.container
+import app.lumen.photos.work.BackgroundJobs
 import app.lumen.photos.data.media.Album
 import app.lumen.photos.data.media.MediaItem
 import app.lumen.photos.ui.components.Format
@@ -268,7 +269,8 @@ fun SearchTab(onSelectionModeChange: (Boolean) -> Unit) {
                     Text(
                         if (p.total > 0) "KI indexiert: ${Format.count(p.done)} von ${Format.count(p.total)}" +
                             (if (p.msPerImage > 0) " · noch ca. ${Format.etaSeconds((p.total - p.done).toLong() * p.msPerImage / 1000)}" else "")
-                        else "KI-Indexierung wartet …",
+                        else if (p.running) "KI-Indexierung wird vorbereitet …"
+                        else "KI-Indexierung: " + BackgroundJobs.waitingReason(context, p.state, c.settings.current.indexOnlyWhileCharging, p.attempts),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
