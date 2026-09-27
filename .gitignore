@@ -12,3 +12,6 @@ build/
 *.aab
 *.jks
 *.keystore
+
+# Fixed Android debug key, committed so CI builds keep the same signature.
+!signing/debug.keystore

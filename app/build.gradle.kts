@@ -14,12 +14,25 @@ android {
         applicationId = "app.lumen.photos"
         minSdk = 34
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0.0"
+        // CI passes the build number so every release can be installed over the previous one.
+        val buildNumber = (project.findProperty("buildNumber") as String?)?.toIntOrNull() ?: 1
+        versionCode = buildNumber
+        versionName = "1.0.$buildNumber"
 
         ndk {
             // Pixel 10 Pro (Tensor G5) is 64-bit ARM only.
             abiFilters += listOf("arm64-v8a")
+        }
+    }
+
+    signingConfigs {
+        getByName("debug") {
+            // Fixed Android debug key (androiddebugkey / android) committed to the repo, so every
+            // CI build has the same signature and can be installed over the previous one.
+            storeFile = rootProject.file("signing/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
         }
     }
 
@@ -28,7 +41,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signed with the debug key so a release build can be sideloaded right away.
+            // Optimised build, signed with the Android debug key.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -58,6 +71,7 @@ kotlin {
             "androidx.compose.foundation.ExperimentalFoundationApi",
             "androidx.compose.animation.ExperimentalSharedTransitionApi",
             "androidx.compose.foundation.layout.ExperimentalLayoutApi",
+            "me.saket.telephoto.ExperimentalTelephotoApi",
         )
     }
 }
@@ -91,6 +105,7 @@ dependencies {
     implementation(libs.work.runtime)
     implementation(libs.datastore.preferences)
     implementation(libs.exifinterface)
+    implementation(libs.documentfile)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.onnxruntime.android)

@@ -10,3 +10,8 @@
 -keepclasseswithmembers class app.lumen.photos.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
+
+# ExifCopier enumerates all TAG_* constants via reflection.
+-keepclassmembers class androidx.exifinterface.media.ExifInterface {
+    public static final java.lang.String TAG_*;
+}

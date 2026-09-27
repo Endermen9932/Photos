@@ -13,6 +13,7 @@ room = "2.8.5"
 work = "2.12.0"
 datastore = "1.2.1"
 exifinterface = "1.4.2"
+documentfile = "1.1.0"
 serialization = "1.11.0"
 coroutines = "1.11.0"
 onnxruntime = "1.30.0"
@@ -45,6 +46,7 @@ room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 exifinterface = { module = "androidx.exifinterface:exifinterface", version.ref = "exifinterface" }
+documentfile = { module = "androidx.documentfile:documentfile", version.ref = "documentfile" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntime" }

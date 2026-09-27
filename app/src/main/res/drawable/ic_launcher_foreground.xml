@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Four overlapping petals forming a soft aperture -->
+    <group android:pivotX="54" android:pivotY="54">
+        <path android:pathData="M54,32 C66,32 72,42 72,54 L54,54 Z" android:fillColor="#FFFFB4A8" />
+        <path android:pathData="M76,54 C76,66 66,72 54,72 L54,54 Z" android:fillColor="#FFFFD66B" />
+        <path android:pathData="M54,76 C42,76 36,66 36,54 L54,54 Z" android:fillColor="#FF8BD6FF" />
+        <path android:pathData="M32,54 C32,42 42,36 54,36 L54,54 Z" android:fillColor="#FFB9A8FF" />
+    </group>
+    <path android:pathData="M54,47.5 A6.5,6.5 0,1 1,53.99 47.5 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="54" android:centerY="54" android:gradientRadius="7">
+                <item android:offset="0" android:color="#FFFFFFFF" />
+                <item android:offset="1" android:color="#FFF3EDFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>
