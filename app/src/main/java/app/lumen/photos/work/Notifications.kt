@@ -21,6 +21,7 @@ object Notifications {
     const val ID_DOWNLOAD = 1003
     const val ID_BACKUP = 1004
     const val ID_FACES = 1005
+    const val ID_VIDEO = 1006
     const val ID_DONE = 1100
 
     fun createChannels(context: Context) {

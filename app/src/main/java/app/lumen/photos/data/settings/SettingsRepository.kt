@@ -47,6 +47,21 @@ data class OptimizerSettings(
     val minSavingsPercent: Int = 10,
 )
 
+enum class VideoCodec(val label: String) { HEVC("HEVC (H.265)"), H264("H.264") }
+
+@Serializable
+data class VideoOptimizerSettings(
+    /** Uses the short edge: FHD = 1080p, QHD = 1440p, UHD = 2160p. */
+    val resolution: TargetResolution = TargetResolution.FHD,
+    val quality: Int = 70,
+    val codec: VideoCodec = VideoCodec.HEVC,
+    val mode: OptimizeMode = OptimizeMode.REPLACE,
+    val keepHdr: Boolean = true,
+    val keepMetadata: Boolean = true,
+    val skipFavorites: Boolean = false,
+    val minSavingsPercent: Int = 15,
+)
+
 @Serializable
 data class BackupSettings(
     /** Persisted SAF tree URI of the backup destination (USB stick, SD card, cloud provider …). */
@@ -82,6 +97,7 @@ data class AppSettings(
     val onboardingDone: Boolean = false,
     val optimizer: OptimizerSettings = OptimizerSettings(),
     val backup: BackupSettings = BackupSettings(),
+    val videoOptimizer: VideoOptimizerSettings = VideoOptimizerSettings(),
 )
 
 private val Context.dataStore by preferencesDataStore("settings")
@@ -108,6 +124,9 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
             prefs[key] = json.encodeToString(AppSettings.serializer(), next)
         }
     }
+
+    suspend fun updateVideoOptimizer(transform: (VideoOptimizerSettings) -> VideoOptimizerSettings) =
+        update { it.copy(videoOptimizer = transform(it.videoOptimizer)) }
 
     suspend fun updateBackup(transform: (BackupSettings) -> BackupSettings) =
         update { it.copy(backup = transform(it.backup)) }

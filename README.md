@@ -23,6 +23,12 @@ Pixel 10 Pro (Tensor G5, 16 GB RAM) – **ohne Google-Play-Dienste** und ohne Cl
 - Modi: Original ersetzen oder Kopie + Original in den Papierkorb (30 Tage wiederherstellbar)
 - Läuft als Hintergrundjob mit Fortschritts-Benachrichtigung
 
+**Videos komprimieren**
+- Gleicher Stil wie beim Foto-Komprimierer: 720p/1080p/1440p/4K, fünf Qualitätsstufen, HEVC oder H.264
+- Vorher/Nachher-Vergleich aus einem echten 3-Sekunden-Testclip inkl. Bitrate, Hochrechnung der Ersparnis
+- Hardware-Encoder des Tensor G5 (Media3 Transformer, ohne Google-Dienste), HDR bleibt mit HEVC erhalten,
+  Aufnahmedatum und GPS werden übernommen, läuft im Hintergrund mit Wakelock
+
 **Personen (Gesichtserkennung, offline)**
 - Neuer Tab „Personen“: häufige Gesichter werden automatisch gruppiert, Namen vergeben, zusammenführen, ausblenden
 - Drei Qualitätsstufen: Schnell (buffalo_s, 16 MB), Ausgewogen (buffalo_l, 191 MB), Sehr gut (antelopev2, 278 MB)

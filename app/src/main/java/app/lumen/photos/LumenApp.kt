@@ -10,6 +10,7 @@ import app.lumen.photos.data.media.MediaRepository
 import app.lumen.photos.data.settings.SettingsRepository
 import app.lumen.photos.face.FaceRepository
 import app.lumen.photos.optimize.ImageOptimizer
+import app.lumen.photos.optimize.VideoCompressor
 import app.lumen.photos.ui.components.FaceCropFetcher
 import app.lumen.photos.ui.components.FaceCropKeyer
 import app.lumen.photos.ui.components.ThumbFetcher
@@ -41,6 +42,7 @@ class AppContainer(context: Context) {
         db.embeddings().markReplaced(id)
         db.faces().markReplaced(id)
     }
+    val videoCompressor = VideoCompressor(context, db.optimized())
     val faces = FaceRepository(context, db.faces(), settings, models, media, scope)
     val lists = MediaListRegistry()
 }

@@ -99,6 +99,8 @@ dependencies {
     implementation(libs.coil.video)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui.compose)
+    implementation(libs.media3.transformer)
+    implementation(libs.media3.muxer)
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)

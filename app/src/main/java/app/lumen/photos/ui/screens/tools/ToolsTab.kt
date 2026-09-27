@@ -22,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Backup
+import androidx.compose.material.icons.outlined.VideoSettings
 import androidx.compose.material.icons.outlined.Compress
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
@@ -73,6 +74,13 @@ fun ToolsTab() {
     val videoBytes = remember(media) { media.filter { it.isVideo }.sumOf { it.size } }
     val candidates = remember(media, settings.optimizer, done) {
         media.filter { ImageOptimizer.isCandidate(it, settings.optimizer, done) }
+    }
+    val videoList = remember(media, settings.videoOptimizer, done) {
+        media.filter { app.lumen.photos.optimize.VideoCompressor.isCandidate(it, settings.videoOptimizer, done) }
+    }
+    val videoCandidates = videoList.size
+    val videoSavings = remember(videoList, settings.videoOptimizer) {
+        videoList.sumOf { (it.size - app.lumen.photos.optimize.VideoCompressor.estimateSize(it, settings.videoOptimizer)).coerceAtLeast(0) }
     }
     val potential = remember(candidates, settings.optimizer) {
         candidates.sumOf { (it.size * (1f - ImageOptimizer.heuristicRatio(it, settings.optimizer))).toLong() }
@@ -149,6 +157,15 @@ fun ToolsTab() {
             model?.let { "${it.tier} · ${it.name} · ${Format.count(indexed)} indexiert" } ?: "Offline-KI-Suche einrichten",
             onClick = { nav.models() },
             shape = MaterialShapes.SoftBurst.toShape(),
+            iconContainer = MaterialTheme.colorScheme.tertiaryContainer,
+            iconContent = MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+        ActionCard(
+            Icons.Outlined.VideoSettings,
+            "Videos komprimieren",
+            "${Format.count(videoCandidates)} Videos · ca. ${Format.bytes(videoSavings)} frei machbar",
+            onClick = { nav.videoOptimize() },
+            shape = MaterialShapes.Pill.toShape(),
             iconContainer = MaterialTheme.colorScheme.tertiaryContainer,
             iconContent = MaterialTheme.colorScheme.onTertiaryContainer,
         )

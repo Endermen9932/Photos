@@ -42,6 +42,7 @@ import app.lumen.photos.ui.screens.home.HomeScreen
 import app.lumen.photos.ui.screens.models.ModelsScreen
 import app.lumen.photos.ui.screens.onboarding.OnboardingScreen
 import app.lumen.photos.ui.screens.optimize.OptimizeScreen
+import app.lumen.photos.ui.screens.optimize.VideoOptimizeScreen
 import app.lumen.photos.ui.screens.settings.SettingsScreen
 import app.lumen.photos.ui.screens.viewer.ExternalViewerScreen
 import app.lumen.photos.ui.screens.viewer.ViewerScreen
@@ -58,6 +59,7 @@ import kotlinx.serialization.Serializable
 @Serializable object SettingsRoute
 @Serializable data class EditorRoute(val id: Long)
 @Serializable object BackupRoute
+@Serializable object VideoOptimizeRoute
 @Serializable data class PersonRoute(val id: Long)
 @Serializable data class ReviewRoute(val personId: Long)
 
@@ -74,6 +76,7 @@ class Navigator(private val controller: NavHostController) {
     fun settings() = controller.navigate(SettingsRoute) { launchSingleTop = true }
     fun editor(id: Long) = controller.navigate(EditorRoute(id))
     fun backup() = controller.navigate(BackupRoute) { launchSingleTop = true }
+    fun videoOptimize() = controller.navigate(VideoOptimizeRoute) { launchSingleTop = true }
     fun person(id: Long) = controller.navigate(PersonRoute(id))
     fun review(personId: Long) = controller.navigate(ReviewRoute(personId))
     fun external(uri: String, mime: String?) = controller.navigate(ExternalViewerRoute(uri, mime))
@@ -173,6 +176,7 @@ fun LumenNavHost(startOnboarding: Boolean, onNavigatorReady: (Navigator) -> Unit
                 composable<ModelsRoute> { Page { ModelsScreen() } }
                 composable<SettingsRoute> { Page { SettingsScreen() } }
                 composable<BackupRoute> { Page { BackupScreen() } }
+                composable<VideoOptimizeRoute> { Page { VideoOptimizeScreen() } }
                 composable<PersonRoute> { entry ->
                     CompositionLocalProvider(LocalNavAnimatedScope provides this) { Page { PersonScreen(entry.toRoute<PersonRoute>().id) } }
                 }
