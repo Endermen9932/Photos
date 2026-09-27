@@ -150,7 +150,16 @@ class SearchViewModel(private val c: AppContainer) : ViewModel() {
             _loading.value = true
             val lower = q.trim().lowercase()
             _albums.value = c.media.albums.value.filter { it.name.lowercase().contains(lower) }
-            _result.value = runCatching { c.ai.search(q) }.getOrNull()
+            val (people, rest) = c.faces.matchQuery(q)
+            _result.value = runCatching {
+                if (people.isNotEmpty()) {
+                    // All named persons must be in the photo ("Paul Anna" = photos with both).
+                    val allowed = people.map { it.mediaIds.toSet() }.reduce { a, b -> a intersect b }
+                    c.ai.searchWithin(rest, allowed, q)
+                } else {
+                    c.ai.search(q)
+                }
+            }.getOrNull()
             _loading.value = false
         }
     }
@@ -197,7 +206,9 @@ fun SearchTab(onSelectionModeChange: (Boolean) -> Unit) {
     var columns by remember { mutableStateOf(3) }
     val focus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
-    val ready = model != null && model!!.id in installed
+    val persons by c.faces.persons.collectAsStateWithLifecycle()
+    val namedPersons = remember(persons) { persons.filter { it.name != null && !it.hidden } }
+    val ready = (model != null && model!!.id in installed) || namedPersons.isNotEmpty()
 
     LaunchedEffect(indexSize, ready) { if (ready) vm.loadExplore() }
     LaunchedEffect(selection.isNotEmpty()) { onSelectionModeChange(selection.isNotEmpty()) }
@@ -284,6 +295,8 @@ fun SearchTab(onSelectionModeChange: (Boolean) -> Unit) {
                 when (state) {
                     0 -> SetupHint(onSetup = { nav.models() })
                     1 -> ExploreGrid(
+                        persons = namedPersons,
+                        onPerson = { vm.setQuery(it, immediate = true) },
                         explore = explore,
                         indexed = indexed,
                         total = media.size,
@@ -382,6 +395,8 @@ private fun SetupHint(onSetup: () -> Unit) {
 
 @Composable
 private fun ExploreGrid(
+    persons: List<app.lumen.photos.face.Person>,
+    onPerson: (String) -> Unit,
     explore: List<Pair<Concept, MediaItem>>,
     indexed: Int,
     total: Int,
@@ -404,6 +419,15 @@ private fun ExploreGrid(
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column {
+                if (persons.isNotEmpty()) {
+                    Text("Personen", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 6.dp))
+                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(bottom = 14.dp)) {
+                        items(persons.size) { i ->
+                            val p = persons[i]
+                            app.lumen.photos.ui.screens.people.PersonCard(p, Modifier.width(78.dp)) { onPerson(p.name!!) }
+                        }
+                    }
+                }
                 Text("Probier mal", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 6.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     suggestions.forEach { s ->

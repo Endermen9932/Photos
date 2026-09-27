@@ -163,7 +163,7 @@ class AiRepository(
         fresh
     }
 
-    fun download(model: AiModel) {
+    fun download(model: DownloadableModel) {
         val request = OneTimeWorkRequestBuilder<ModelDownloadWorker>()
             .setInputData(workDataOf(ModelDownloadWorker.KEY_MODEL to model.id))
             .addTag(ModelDownloadWorker.TAG)
@@ -174,7 +174,7 @@ class AiRepository(
         workManager.enqueueUniqueWork("download-${model.id}", ExistingWorkPolicy.KEEP, request)
     }
 
-    fun cancelDownload(model: AiModel) {
+    fun cancelDownload(model: DownloadableModel) {
         workManager.cancelUniqueWork("download-${model.id}")
     }
 
@@ -238,6 +238,28 @@ class AiRepository(
         val vector = textEmbedding(model, query)
         val scored = withContext(Dispatchers.Default) { index.search(vector, settings.current.searchStrictness) }
         return toResult(query, scored, start)
+    }
+
+    /**
+     * Search restricted to [allowed] media (e.g. all photos of "Paul"). Without an AI model or with
+     * an empty [query] the photos are simply returned newest first.
+     */
+    suspend fun searchWithin(query: String, allowed: Set<Long>, label: String): SearchResult {
+        val start = System.currentTimeMillis()
+        val model = activeModel.value
+        val byId = media.media.value.associateBy { it.id }
+        if (query.isBlank() || model == null || !models.isInstalled(model)) {
+            val items = allowed.mapNotNull { byId[it] }.sortedByDescending { it.timestamp }
+            return SearchResult(label, items, emptyMap(), System.currentTimeMillis() - start, items.size)
+        }
+        index.ensureLoaded(model.id)
+        val vector = textEmbedding(model, query)
+        val (ids, scores) = withContext(Dispatchers.Default) { index.scoreAll(vector) }
+        val scored = ids.indices.filter { ids[it] in allowed }.sortedByDescending { scores[it] }
+        val items = scored.mapNotNull { byId[ids[it]] }
+        // Photos without an AI vector yet go to the end.
+        val rest = allowed.filter { id -> items.none { it.id == id } }.mapNotNull { byId[it] }
+        return SearchResult(label, items + rest, scored.associate { ids[it] to scores[it] }, System.currentTimeMillis() - start, allowed.size)
     }
 
     suspend fun similar(item: MediaItem): SearchResult? {

@@ -23,6 +23,13 @@ Pixel 10 Pro (Tensor G5, 16 GB RAM) – **ohne Google-Play-Dienste** und ohne Cl
 - Modi: Original ersetzen oder Kopie + Original in den Papierkorb (30 Tage wiederherstellbar)
 - Läuft als Hintergrundjob mit Fortschritts-Benachrichtigung
 
+**Personen (Gesichtserkennung, offline)**
+- Neuer Tab „Personen“: häufige Gesichter werden automatisch gruppiert, Namen vergeben, zusammenführen, ausblenden
+- Drei Qualitätsstufen: Schnell (buffalo_s, 16 MB), Ausgewogen (buffalo_l, 191 MB), Sehr gut (antelopev2, 278 MB)
+- „Fotos prüfen“: bis zu 50 unsichere Treffer im Tinder-Stil wischen (rechts = ja, links = nein, Rückgängig)
+- Suche nach Namen, auch kombiniert: „Paul“, „Paul Anna“, „Paul am Strand“
+- Namen hängen an der Person, nicht an der Datei – Komprimieren oder Neu-Scannen verliert nichts
+
 **Backup**
 - Inkrementelles Backup der ganzen Galerie in einen frei wählbaren Ordner (USB-Stick, SD-Karte,
   Nextcloud/NAS über den Android-Dateimanager), Ordnerstruktur bleibt erhalten

@@ -13,7 +13,16 @@ enum class ResizeMode {
 }
 
 @Immutable
-data class ModelFile(val path: String, val sizeBytes: Long)
+data class ModelFile(val path: String, val sizeBytes: Long, val localName: String = path.substringAfterLast('/'))
+
+/** Anything the [ModelManager] can download: a repo on Hugging Face plus its files. */
+interface DownloadableModel {
+    val id: String
+    val repo: String
+    val files: List<ModelFile>
+    val totalBytes: Long get() = files.sumOf { it.sizeBytes }
+    fun url(file: ModelFile) = "https://huggingface.co/$repo/resolve/main/${file.path}"
+}
 
 /**
  * Description of one on-device image/text embedding model. All models run fully offline through
@@ -21,11 +30,11 @@ data class ModelFile(val path: String, val sizeBytes: Long)
  */
 @Immutable
 data class AiModel(
-    val id: String,
+    override val id: String,
     val name: String,
     val tier: String,
     val description: String,
-    val repo: String,
+    override val repo: String,
     val visionFile: ModelFile,
     val visionDataFile: ModelFile? = null,
     val textFile: ModelFile,
@@ -44,11 +53,8 @@ data class AiModel(
     /** Rough estimate on a Pixel 10 Pro (Tensor G5, 6 threads). */
     val msPerImage: Int,
     val ramMb: Int,
-) {
-    val files: List<ModelFile> get() = listOfNotNull(visionFile, visionDataFile, textFile, tokenizerFile)
-    val totalBytes: Long get() = files.sumOf { it.sizeBytes }
-
-    fun url(file: ModelFile) = "https://huggingface.co/$repo/resolve/main/${file.path}"
+) : DownloadableModel {
+    override val files: List<ModelFile> get() = listOfNotNull(visionFile, visionDataFile, textFile, tokenizerFile)
 
     override fun equals(other: Any?) = other is AiModel && other.id == id
     override fun hashCode() = id.hashCode()

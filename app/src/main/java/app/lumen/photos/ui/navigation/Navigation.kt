@@ -18,6 +18,10 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import app.lumen.photos.ui.screens.people.PersonScreen
+import app.lumen.photos.ui.screens.people.ReviewScreen
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -54,6 +58,8 @@ import kotlinx.serialization.Serializable
 @Serializable object SettingsRoute
 @Serializable data class EditorRoute(val id: Long)
 @Serializable object BackupRoute
+@Serializable data class PersonRoute(val id: Long)
+@Serializable data class ReviewRoute(val personId: Long)
 
 class Navigator(private val controller: NavHostController) {
     fun back() {
@@ -68,6 +74,8 @@ class Navigator(private val controller: NavHostController) {
     fun settings() = controller.navigate(SettingsRoute) { launchSingleTop = true }
     fun editor(id: Long) = controller.navigate(EditorRoute(id))
     fun backup() = controller.navigate(BackupRoute) { launchSingleTop = true }
+    fun person(id: Long) = controller.navigate(PersonRoute(id))
+    fun review(personId: Long) = controller.navigate(ReviewRoute(personId))
     fun external(uri: String, mime: String?) = controller.navigate(ExternalViewerRoute(uri, mime))
     fun finishOnboarding() = controller.navigate(HomeRoute) {
         popUpTo(OnboardingRoute) { inclusive = true }
@@ -165,6 +173,13 @@ fun LumenNavHost(startOnboarding: Boolean, onNavigatorReady: (Navigator) -> Unit
                 composable<ModelsRoute> { Page { ModelsScreen() } }
                 composable<SettingsRoute> { Page { SettingsScreen() } }
                 composable<BackupRoute> { Page { BackupScreen() } }
+                composable<PersonRoute> { entry ->
+                    CompositionLocalProvider(LocalNavAnimatedScope provides this) { Page { PersonScreen(entry.toRoute<PersonRoute>().id) } }
+                }
+                composable<ReviewRoute>(
+                    enterTransition = { slideInVertically(tween(ENTER_MS, easing = EmphasizedDecelerate)) { it / 3 } + fadeIn(tween(250)) },
+                    popExitTransition = { slideOutVertically(tween(EXIT_MS, easing = EmphasizedAccelerate)) { it / 3 } + fadeOut(tween(EXIT_MS)) },
+                ) { entry -> Page { ReviewScreen(entry.toRoute<ReviewRoute>().personId) } }
                 composable<EditorRoute>(
                     enterTransition = { fadeIn() + scaleIn(initialScale = 0.94f) },
                     popExitTransition = { fadeOut() + scaleOut(targetScale = 0.94f) },

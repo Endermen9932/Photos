@@ -54,7 +54,12 @@ sealed interface Outcome {
  * Downscales and re-encodes photos. Keeps capture date, camera data and location, and – for JPEG –
  * the Ultra HDR gain map of Pixel photos.
  */
-class ImageOptimizer(private val context: Context, private val dao: OptimizedDao) {
+class ImageOptimizer(
+    private val context: Context,
+    private val dao: OptimizedDao,
+    /** Called after a file was re-encoded in place, so AI indexes can keep their data. */
+    private val onReplacedInPlace: suspend (Long) -> Unit = {},
+) {
 
     private val resolver = context.contentResolver
 
@@ -206,6 +211,7 @@ class ImageOptimizer(private val context: Context, private val dao: OptimizedDao
             val replaceInPlace = s.mode == OptimizeMode.REPLACE && item.mimeType == compressed.format.mime
             if (replaceInPlace) {
                 resolver.openOutputStream(item.uri, "wt")?.use { it.write(finalBytes) } ?: error("Kein Schreibzugriff")
+                onReplacedInPlace(item.id)
             } else {
                 writeCopyAndTrashOriginal(item, finalBytes, compressed.format)
             }

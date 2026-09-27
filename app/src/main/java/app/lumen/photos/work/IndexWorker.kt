@@ -43,7 +43,9 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
             c.index.remove(model.id, gone)
         }
 
-        val todo = all.filter { known[it.id] != it.dateModified }
+        // Photos re-encoded in place by the optimiser keep their vector (marked with -1).
+        all.filter { known[it.id] == -1L }.forEach { dao.acceptReplaced(it.id, it.dateModified) }
+        val todo = all.filter { val k = known[it.id]; k != it.dateModified && k != -1L }
         if (todo.isEmpty()) return@withContext Result.success()
 
         c.index.ensureLoaded(model.id)

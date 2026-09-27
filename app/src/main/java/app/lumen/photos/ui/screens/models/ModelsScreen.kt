@@ -132,6 +132,9 @@ fun ModelsScreen() {
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
                 )
             }
+            item {
+                Text("Bildinhalte (Suche)", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
+            }
             items(ModelCatalog.models, key = { it.id }) { model ->
                 ModelCard(
                     model = model,
@@ -149,6 +152,10 @@ fun ModelsScreen() {
                         importLauncher.launch(arrayOf("*/*"))
                     },
                 )
+            }
+            item {
+                Text("Gesichtserkennung (Personen)", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 4.dp))
+                app.lumen.photos.ui.screens.people.FaceModelsSection()
             }
         }
     }

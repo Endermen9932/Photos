@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import app.lumen.photos.face.FaceModelCatalog
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -27,16 +28,16 @@ class ModelManager(private val context: Context) {
     /** IDs of all models whose files are completely present. */
     val installed: StateFlow<Set<String>> = _installed.asStateFlow()
 
-    fun dir(model: AiModel) = File(root, model.id)
-    fun file(model: AiModel, file: ModelFile) = File(dir(model), file.path.substringAfterLast('/'))
+    fun dir(model: DownloadableModel) = File(root, model.id)
+    fun file(model: DownloadableModel, file: ModelFile) = File(dir(model), file.localName)
     fun tokenizerCache(model: AiModel) = File(dir(model), "tokenizer.bin")
 
-    fun isInstalled(model: AiModel): Boolean = model.files.all { f ->
+    fun isInstalled(model: DownloadableModel): Boolean = model.files.all { f ->
         val local = file(model, f)
         local.exists() && (f.sizeBytes <= 0 || local.length() == f.sizeBytes)
     }
 
-    fun downloadedBytes(model: AiModel): Long = model.files.sumOf { f ->
+    fun downloadedBytes(model: DownloadableModel): Long = model.files.sumOf { f ->
         val done = file(model, f)
         val part = File(done.path + ".part")
         when {
@@ -46,15 +47,15 @@ class ModelManager(private val context: Context) {
         }
     }
 
-    fun diskUsage(model: AiModel): Long = dir(model).listFiles()?.sumOf { it.length() } ?: 0L
+    fun diskUsage(model: DownloadableModel): Long = dir(model).listFiles()?.sumOf { it.length() } ?: 0L
 
-    private fun scanInstalled(): Set<String> = ModelCatalog.models.filter { isInstalled(it) }.map { it.id }.toSet()
+    private fun scanInstalled(): Set<String> = (ModelCatalog.models + FaceModelCatalog.models).filter { isInstalled(it) }.map { it.id }.toSet()
 
     fun refresh() {
         _installed.value = scanInstalled()
     }
 
-    fun delete(model: AiModel) {
+    fun delete(model: DownloadableModel) {
         dir(model).deleteRecursively()
         refresh()
     }
@@ -63,7 +64,7 @@ class ModelManager(private val context: Context) {
      * Downloads every missing file of [model]. [onProgress] receives (downloadedBytes, totalBytes).
      * Cooperative with coroutine cancellation.
      */
-    suspend fun download(model: AiModel, onProgress: suspend (Long, Long) -> Unit) = withContext(Dispatchers.IO) {
+    suspend fun download(model: DownloadableModel, onProgress: suspend (Long, Long) -> Unit) = withContext(Dispatchers.IO) {
         dir(model).mkdirs()
         val total = model.totalBytes
         var base = 0L
@@ -158,12 +159,12 @@ class ModelManager(private val context: Context) {
      * Imports model files manually picked by the user (for fully offline setups). The files are
      * matched by name against the model's file list.
      */
-    suspend fun import(model: AiModel, uris: List<Uri>, nameOf: (Uri) -> String?): Int = withContext(Dispatchers.IO) {
+    suspend fun import(model: DownloadableModel, uris: List<Uri>, nameOf: (Uri) -> String?): Int = withContext(Dispatchers.IO) {
         dir(model).mkdirs()
         var imported = 0
         for (uri in uris) {
             val name = nameOf(uri) ?: continue
-            val match = model.files.firstOrNull { it.path.substringAfterLast('/') == name } ?: continue
+            val match = model.files.firstOrNull { it.localName == name || it.path.substringAfterLast('/') == name } ?: continue
             context.contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(file(model, match)).use { input.copyTo(it, 1 shl 16) }
                 imported++

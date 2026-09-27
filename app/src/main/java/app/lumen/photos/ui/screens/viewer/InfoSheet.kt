@@ -16,6 +16,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CameraAlt
+import androidx.compose.material.icons.outlined.Face
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.lumen.photos.container
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material3.AssistChip
@@ -86,6 +91,7 @@ fun InfoSheet(item: MediaItem, onDismiss: () -> Unit) {
         Column(Modifier.padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 16.dp)) {
             Text("Details", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(16.dp))
+            PeopleInPhoto(item)
             InfoRow(Icons.Outlined.CalendarMonth, Format.full(item.timestamp), null)
             InfoRow(
                 Icons.Outlined.Image,
@@ -136,6 +142,39 @@ private fun InfoRow(icon: ImageVector, title: String, subtitle: String?) {
         Column {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun PeopleInPhoto(item: MediaItem) {
+    val c = LocalContext.current.container
+    val nav = app.lumen.photos.ui.navigation.LocalNavigator.current
+    val persons by c.faces.persons.collectAsStateWithLifecycle()
+    val faces by androidx.compose.runtime.produceState(emptyList<app.lumen.photos.data.db.FaceEntity>(), item.id) {
+        val model = c.faces.activeModel.value
+        value = if (model == null) emptyList() else c.db.faces().facesOfMedia(model.id, listOf(item.id))
+    }
+    if (faces.isEmpty()) return
+    val shown = faces.mapNotNull { f -> persons.firstOrNull { it.id == f.personId }?.let { f to it } }
+    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Outlined.Face, null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(16.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (shown.isEmpty()) Text("${faces.size} Gesicht(er) erkannt", style = MaterialTheme.typography.bodyLarge)
+            shown.forEach { (face, person) ->
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.width(64.dp).clickable { nav.person(person.id) }
+                ) {
+                    app.lumen.photos.ui.components.FaceImage(
+                        app.lumen.photos.ui.components.FaceCrop(item.uri, face.id, face.left, face.top, face.right, face.bottom, 160),
+                        androidx.compose.foundation.shape.CircleShape,
+                        Modifier.size(52.dp)
+                    )
+                    Text(person.name ?: "Unbekannt", style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                }
+            }
         }
     }
 }

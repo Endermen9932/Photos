@@ -8,7 +8,10 @@ import app.lumen.photos.ai.SearchIndex
 import app.lumen.photos.data.db.LumenDatabase
 import app.lumen.photos.data.media.MediaRepository
 import app.lumen.photos.data.settings.SettingsRepository
+import app.lumen.photos.face.FaceRepository
 import app.lumen.photos.optimize.ImageOptimizer
+import app.lumen.photos.ui.components.FaceCropFetcher
+import app.lumen.photos.ui.components.FaceCropKeyer
 import app.lumen.photos.ui.components.ThumbFetcher
 import app.lumen.photos.ui.components.ThumbKeyer
 import app.lumen.photos.work.Notifications
@@ -34,7 +37,11 @@ class AppContainer(context: Context) {
     val models = ModelManager(context)
     val index = SearchIndex(db.embeddings())
     val ai = AiRepository(context, settings, models, db, index, media, scope)
-    val optimizer = ImageOptimizer(context, db.optimized())
+    val optimizer = ImageOptimizer(context, db.optimized()) { id ->
+        db.embeddings().markReplaced(id)
+        db.faces().markReplaced(id)
+    }
+    val faces = FaceRepository(context, db.faces(), settings, models, media, scope)
     val lists = MediaListRegistry()
 }
 
@@ -47,6 +54,7 @@ class LumenApp : Application(), SingletonImageLoader.Factory {
         container = AppContainer(this)
         Notifications.createChannels(this)
         container.ai.start()
+        container.faces.start()
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =
@@ -54,6 +62,8 @@ class LumenApp : Application(), SingletonImageLoader.Factory {
             .components {
                 add(ThumbFetcher.Factory(context))
                 add(ThumbKeyer())
+                add(FaceCropFetcher.Factory(context))
+                add(FaceCropKeyer())
                 add(VideoFrameDecoder.Factory())
             }
             .memoryCache {

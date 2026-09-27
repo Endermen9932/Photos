@@ -12,6 +12,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import app.lumen.photos.work.BackupWorker
+import app.lumen.photos.work.FaceWorker
 import app.lumen.photos.work.IndexWorker
 import app.lumen.photos.work.OptimizeWorker
 import kotlinx.coroutines.Job
@@ -88,9 +89,10 @@ class MainActivity : ComponentActivity() {
             wm.getWorkInfosForUniqueWorkFlow(IndexWorker.NAME),
             wm.getWorkInfosForUniqueWorkFlow(OptimizeWorker.NAME),
             wm.getWorkInfosForUniqueWorkFlow(BackupWorker.NAME),
+            wm.getWorkInfosForUniqueWorkFlow(FaceWorker.NAME),
             container.settings.settings,
-        ) { index, optimize, backup, s ->
-            s.keepScreenOnDuringWork && (index + optimize + backup).any { it.state == WorkInfo.State.RUNNING }
+        ) { index, optimize, backup, faces, s ->
+            s.keepScreenOnDuringWork && (index + optimize + backup + faces).any { it.state == WorkInfo.State.RUNNING }
         }.distinctUntilChanged()
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {

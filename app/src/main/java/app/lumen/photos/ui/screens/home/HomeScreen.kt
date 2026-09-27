@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.outlined.Face
+import app.lumen.photos.ui.screens.people.PeopleTab
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Search
@@ -49,6 +52,7 @@ private val tabs = listOf(
     Tab("Fotos", Icons.Outlined.Photo, Icons.Filled.Photo),
     Tab("Alben", Icons.Outlined.PhotoLibrary, Icons.Filled.PhotoLibrary),
     Tab("Suche", Icons.Outlined.Search, Icons.Filled.Search),
+    Tab("Personen", Icons.Outlined.Face, Icons.Filled.Face),
     Tab("Werkzeuge", Icons.Outlined.Build, Icons.Filled.Build),
 )
 
@@ -75,6 +79,7 @@ fun HomeScreen() {
                     0 -> TimelineTab(timelineState, onSelectionModeChange = { hideBar = it })
                     1 -> AlbumsTab()
                     2 -> SearchTab(onSelectionModeChange = { hideBar = it })
+                    3 -> PeopleTab()
                     else -> ToolsTab()
                 }
             }

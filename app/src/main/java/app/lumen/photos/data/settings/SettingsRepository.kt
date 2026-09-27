@@ -69,6 +69,7 @@ data class AppSettings(
     val showMemories: Boolean = true,
     val reduceMotion: Boolean = false,
     val activeModelId: String? = null,
+    val activeFaceModelId: String? = null,
     val aiThreads: Int = 6,
     val useXnnpack: Boolean = false,
     val indexOnlyWhileCharging: Boolean = false,
