@@ -42,6 +42,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import app.lumen.photos.ui.LocalNavAnimatedScope
 import app.lumen.photos.ui.LocalSharedTransitionScope
+import app.lumen.photos.ui.screens.aieditor.AiEditorScreen
 import app.lumen.photos.ui.screens.backup.BackupScreen
 import app.lumen.photos.ui.screens.collection.CollectionScreen
 import app.lumen.photos.ui.screens.duplicates.DuplicatesScreen
@@ -66,6 +67,7 @@ import kotlinx.serialization.Serializable
 @Serializable object ModelsRoute
 @Serializable object SettingsRoute
 @Serializable data class EditorRoute(val id: Long)
+@Serializable data class AiEditorRoute(val id: Long)
 @Serializable object BackupRoute
 @Serializable object VideoOptimizeRoute
 @Serializable data class PersonRoute(val id: Long)
@@ -83,6 +85,7 @@ class Navigator(private val controller: NavHostController) {
     fun models() = controller.navigate(ModelsRoute) { launchSingleTop = true }
     fun settings() = controller.navigate(SettingsRoute) { launchSingleTop = true }
     fun editor(id: Long) = controller.navigate(EditorRoute(id))
+    fun aiEditor(id: Long) = controller.navigate(AiEditorRoute(id))
     fun backup() = controller.navigate(BackupRoute) { launchSingleTop = true }
     fun videoOptimize() = controller.navigate(VideoOptimizeRoute) { launchSingleTop = true }
     fun person(id: Long) = controller.navigate(PersonRoute(id))
@@ -234,6 +237,10 @@ fun LumenNavHost(startOnboarding: Boolean, onNavigatorReady: (Navigator) -> Unit
                     enterTransition = { fadeIn() + scaleIn(initialScale = 0.94f) },
                     popExitTransition = { if (backAnimations) popOut() else ExitTransition.None },
                 ) { entry -> EditorScreen(entry.toRoute<EditorRoute>().id) }
+                composable<AiEditorRoute>(
+                    enterTransition = { fadeIn() + scaleIn(initialScale = 0.94f) },
+                    popExitTransition = { if (backAnimations) popOut() else ExitTransition.None },
+                ) { entry -> AiEditorScreen(entry.toRoute<AiEditorRoute>().id) }
             }
         }
     }
